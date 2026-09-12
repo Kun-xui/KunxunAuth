@@ -1,0 +1,7 @@
+{
+  "pack": {
+    "description": "KunxunAuth Device —— 设备免密登录（本模组不含任何资源，此文件只为满足资源包元数据）",
+    "min_format": [88, 0],
+    "max_format": [999, 0]
+  }
+}

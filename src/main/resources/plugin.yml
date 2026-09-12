@@ -1,0 +1,49 @@
+name: KunxunAuth
+version: 1.0.0
+main: com.kunxun.auth.KunxunAuthPlugin
+api-version: '26.2'
+authors: [kunxun]
+description: 预进服对话框登录系统 —— 邮箱验证码注册 + 密码登录（Paper 原生 Dialog）
+website: https://kunxun.top
+softdepend:
+  - ViaVersion
+libraries:
+  - org.xerial:sqlite-jdbc:3.50.1.0
+  - com.mysql:mysql-connector-j:9.3.0
+  - org.eclipse.angus:angus-mail:2.0.3
+  - jakarta.mail:jakarta.mail-api:2.1.3
+commands:
+  register:
+    description: 通过聊天注册账号（旧版本客户端使用）
+    usage: /register <邮箱>
+    aliases: [reg]
+  verify:
+    description: 提交邮箱验证码（注册 / 找回密码）
+    usage: /verify <验证码> <密码>
+    aliases: [code]
+  login:
+    description: 通过聊天登录（旧版本客户端使用）
+    usage: /login <密码>
+    aliases: [l]
+  resetpassword:
+    description: 通过邮箱验证码找回密码
+    usage: /resetpassword <邮箱>
+    aliases: [forgot, resetpw]
+  kunxundevice:
+    description: 管理自己的设备免密登录绑定
+    usage: /kunxundevice <list|remove 序号>
+    aliases: [kadevice, kadev]
+  kunxunauth:
+    description: KunxunAuth 管理命令
+    usage: /kunxunauth <help|reload|stats|info|unregister|restore|setpassword|unlock|devices|revokeall>
+    aliases: [kauth, ka]
+permissions:
+  kunxunauth.admin:
+    description: 允许使用 KunxunAuth 管理命令
+    default: op
+  kunxunauth.bypass:
+    description: 跳过登录检查
+    default: false
+  kunxunauth.device:
+    description: 允许使用 /kunxundevice 管理自己的设备绑定
+    default: true

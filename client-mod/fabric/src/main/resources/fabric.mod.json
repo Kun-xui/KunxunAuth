@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "kunxunauth-device",
+  "version": "${version}",
+  "name": "KunxunAuth Device",
+  "description": "KunxunAuth 设备绑定客户端：用本机 Ed25519 私钥对服务器下发的随机挑战签名，实现免密登录。",
+  "authors": [
+    "Kunxun"
+  ],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "top.kunxun.device.fabric.KunxunAuthDeviceFabric"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "fabric-api": "*",
+    "minecraft": "~26.2",
+    "java": ">=25"
+  }
+}

@@ -1,0 +1,239 @@
+# ==========================================================================
+#  KunxunAuth 消息文件
+#  颜色代码用 &，例如 &a 绿色、&c 红色、&l 加粗、&#55FFFF 十六进制
+#  占位符用 {xxx}
+# ==========================================================================
+
+prefix: '&8[&bKunxunAuth&8] &r'
+
+# ---------------- 通用 ----------------
+no-permission: '&c你没有权限执行这个操作。'
+player-only: '&c这个命令只能由玩家执行。'
+unknown-command: '&c未知的子命令，输入 &e/kunxunauth help &c查看帮助。'
+reload-success: '&a配置与消息文件已重新加载。'
+reload-failed: '&c重新加载失败，请查看控制台日志。'
+internal-error: '&c服务器内部错误，请联系管理员。'
+
+# ---------------- 预进服对话框内容 ----------------
+dialog:
+  # 标题栏
+  register-title: '&b&l注册账号 &8· &7第 {step} 步 / 共 2 步'
+  register-title-step2: '&b&l设置密码 &8· &7第 2 步 / 共 2 步'
+  login-title: '&b&l登录 &8· &7kunxun.top'
+  reset-title: '&b&l找回密码 &8· &7第 {step} 步 / 共 2 步'
+  waiting-title: '&e正在处理…'
+
+  # 正文
+  register-body-step1: |-
+    &7欢迎来到 &bkunxun.top &7服务器！
+    &7首次进入需要绑定邮箱并设置密码。
+    &7请输入你的邮箱地址，我们会发送一封含 &e6 位验证码 &7的邮件。
+  register-body-step2: |-
+    &7验证码已发送到 &b{email}
+    &7请查收邮件（注意垃圾箱），然后在下方填写。
+    &8验证码有效期为 {minutes} 分钟。
+  # 只有在 config.yml 的 register.email-whitelist-domains 非空时才会显示
+  register-allowed-domains: |-
+    &8可用邮箱域名：&b{domains}
+    &8仅限国内邮箱；Gmail 等国外邮箱与临时邮箱无法注册。
+  login-body: |-
+    &7请输入你注册时设置的密码。
+    &8连续输错 {maxAttempts} 次将锁定账号 {lockout} 分钟。
+  reset-body-step1: |-
+    &7请输入你注册时绑定的邮箱。
+    &7我们会发送一封含 &e6 位验证码 &7的邮件用于重置密码。
+  reset-body-step2: |-
+    &7验证码已发送到 &b{email}
+    &7请填写验证码并设置新密码。
+    &8验证码有效期为 {minutes} 分钟。
+  waiting-body: |-
+    &7正在发送验证码，请稍候…
+    &8通常需要几秒钟。
+
+  # 输入框标签
+  input-email: '&f邮箱地址'
+  input-code: '&f邮箱验证码'
+  input-password: '&f密码'
+  input-password-confirm: '&f确认密码'
+  input-new-password: '&f新密码'
+  input-new-password-confirm: '&f确认新密码'
+
+  # 按钮
+  button-send-code: '&a发送验证码'
+  button-resend-code: '&e重新发送验证码'
+  button-submit-register: '&a完成注册'
+  button-submit-login: '&a登录'
+  button-forgot: '&e忘记密码'
+  button-submit-reset: '&a重置密码'
+  button-back-to-login: '&7返回登录'
+  button-cancel: '&c取消'
+  button-wait: '&7请稍候…'
+
+  # 悬停提示
+  tooltip-send-code: '&7点击后验证码会发送到上面填写的邮箱'
+  tooltip-resend-code: '&7重新发送一封验证码邮件'
+  tooltip-submit-register: '&7校验验证码并创建账号'
+  tooltip-submit-login: '&7校验密码并进入服务器'
+  tooltip-forgot: '&7通过注册邮箱重置密码'
+  tooltip-submit-reset: '&7校验验证码并设置新密码'
+  tooltip-back-to-login: '&7回到密码登录框'
+  tooltip-cancel: '&7放弃并断开连接'
+
+  # 校验失败时显示在正文里的红字
+  error-email-empty: '&c请先填写邮箱地址。'
+  error-email-invalid: '&c邮箱格式不正确，请检查后重试。'
+  error-email-blacklisted: '&c该邮箱域名不被允许使用。'
+  error-email-not-whitelisted: '&c该邮箱域名不在允许名单内。可用域名：&b{domains}'
+  error-email-in-use: '&c这个邮箱已经绑定过其他账号了。'
+  error-email-not-found: '&c这个邮箱没有对应的账号，请检查是否输错。'
+  error-code-empty: '&c请填写邮箱验证码。'
+  error-code-wrong: '&c验证码不正确，还可以尝试 {remaining} 次。'
+  error-code-expired: '&c验证码已过期，请点击“重新发送验证码”。'
+  error-code-too-many: '&c验证码错误次数过多，请重新发送验证码。'
+  error-code-required: '&c请先点击“发送验证码”获取验证码。'
+  error-resend-cooldown: '&c发送太频繁了，请 {seconds} 秒后再试。'
+  error-rate-limited: '&c操作过于频繁，请稍后再试。'
+  error-password-empty: '&c请设置密码。'
+  error-password-too-short: '&c密码长度至少 {min} 位。'
+  error-password-too-long: '&c密码长度不能超过 {max} 位。'
+  error-password-mismatch: '&c两次输入的密码不一致。'
+  error-password-wrong: '&c密码错误，还可以尝试 {remaining} 次。'
+  error-account-locked: '&c账号已被锁定，请 {minutes} 分钟后再试。'
+  error-registration-disabled: '&c本服务器当前已关闭注册。'
+  error-name-taken: '&c该玩家名已被注册，请更换游戏 ID。'
+  error-mail-unavailable: '&c邮件服务暂时不可用，请联系管理员。'
+  error-internal: '&c发生内部错误，请联系管理员。'
+
+  # ---------------- 管理员重置码（/kunxunauth setpassword 签发） ----------------
+  # 管理员不再通过命令传明文密码，而是签发一次性重置码，玩家自己在登录界面改密
+  force-reset-title: '&b重置密码（管理员协助）'
+  force-reset-body: |-
+    &7管理员已为你的账号 &f{player} &7签发一次性重置码。
+    &7请填入管理员给你的重置码，并设置一个新密码。
+    &7重置码 &f{minutes} &7分钟内有效，用过一次即失效。
+  input-reset-code: '重置码'
+  button-submit-force-reset: '提交新密码'
+  tooltip-submit-force-reset: '用重置码换新密码'
+  error-reset-code-empty: '&c请填入管理员给你的重置码。'
+  error-reset-code-invalid: '&c重置码不正确，请向管理员确认。'
+  error-reset-code-expired: '&c重置码已过期，请让管理员重新签发。'
+  info-force-reset-done: '&a密码已重置，请用新密码登录。'
+
+  # ---------------- 设备绑定询问（登录/注册成功之后） ----------------
+  # 只有客户端真的能对挑战签名时才会弹这个框，所以这里可以放心按「装了模组」的口气写
+  device-bind-title: '&b绑定这台设备'
+  device-bind-body: |-
+    &7检测到这台设备可以用于免密登录。
+    &7设备：&f{device}
+    &7当前已绑定 &f{bound} &7/ &f{max} &7台。
+    &7绑定后，用这台设备进服将不再需要输入密码。
+    &8设备私钥保存在你的电脑上，不会上传到服务器。
+  device-unknown-name: '未命名设备'
+  button-device-bind: '&a绑定这台设备'
+  tooltip-device-bind: '&7以后用这台设备进服可直接进入，无需输入密码'
+  button-device-skip: '&7这次先不绑'
+  tooltip-device-skip: '&7直接进入游戏，下次登录仍需输入密码'
+
+  # 提交成功时的过渡提示
+  info-code-sent: '&a验证码已发送，请查收邮件。'
+  # 找回密码专用：邮箱是否存在都显示这句，防止被人拿来枚举账号
+  info-code-sent-neutral: '&a如果该邮箱已注册，验证码已发送，请查收邮件（注意垃圾箱）。'
+  info-waiting-mail: '&7正在发送验证码，请稍候…'
+
+# ---------------- 踢出提示 ----------------
+kick:
+  cancelled: '&c你取消了验证，无法进入服务器。'
+  timeout: '&c验证超时（{seconds} 秒），请重新连接服务器。'
+  not-authenticated: '&c请先完成登录验证。'
+  need-register: '&c请先注册：使用 &e/register <邮箱> &c或重新连接服务器。'
+  need-login: '&c请先登录：使用 &e/login <密码> &c或重新连接服务器。'
+  too-many-attempts: '&c错误次数过多，请稍后再试。'
+  registration-disabled: '&c本服务器当前已关闭新玩家注册。'
+  legacy-dialog-unsupported: '&c你的游戏版本过低，无法显示登录界面。'
+  server-full: '&c服务器已满，请稍后再试。'
+
+# ---------------- 聊天降级命令（旧客户端 / 未登录玩家） ----------------
+chat:
+  # 未登录玩家每隔几秒收到的提醒
+  reminder: '&e请先完成验证：&f/register <邮箱> &7或 &f/login <密码>'
+  reminder-interval-seconds: 5
+  register-usage: '&e用法：&f/register <邮箱>'
+  register-whitelist-hint: '&7可用邮箱域名：&b{domains}'
+  register-code-sent: '&a验证码已发送到 &b{email} &a，请在 {minutes} 分钟内输入：&f/verify <验证码> <密码>'
+  reset-usage: '&e用法：&f/resetpassword <邮箱>'
+  reset-code-sent: '&a验证码已发送到 &b{email} &a，请使用：&f/verify <验证码> <新密码>'
+  # 邮箱没注册过时也回这句，防止被拿来枚举账号
+  reset-code-sent-neutral: '&a如果 &b{email} &a已注册，验证码已发送，请在 {minutes} 分钟内使用：&f/verify <验证码> <新密码>'
+  verify-usage: '&e用法：&f/verify <验证码> <密码>'
+  login-usage: '&e用法：&f/login <密码>'
+  already-authenticated: '&a你已经登录过了。'
+  login-success: '&a登录成功，玩的开心！'
+  register-success: '&a注册成功，账号已绑定邮箱 &b{email} &a，玩的开心！'
+  reset-success: '&a密码重置成功，请使用新密码登录。'
+  not-registered: '&c这个玩家名还没有注册。'
+  already-registered: '&c这个玩家名已经注册过了，请使用 &f/login <密码>&c。'
+
+# ---------------- 玩家自助设备管理（/kunxundevice） ----------------
+device:
+  disabled: '&c本服务器未启用设备免密登录。'
+  not-authenticated: '&c请先完成登录验证，再管理设备。'
+  unknown-subcommand: '&c未知的子命令，可用：&f/kunxundevice list &7或 &f/kunxundevice remove <序号>'
+  list-header: '&b&l我的设备 &7({player}) &8· &f{bound}&7/&f{max}'
+  list-empty: '&7你还没有绑定任何设备。装了 KunxunAuth 客户端模组后，登录成功时会询问是否绑定。'
+  list-line: '&7{index}. &f{name} &8· &7公钥 &f{key}&8… &7· &7最近使用 &f{last}'
+  list-usage: '&7删除某台设备：&f/kunxundevice remove <序号>'
+  remove-usage: '&e用法：&f/kunxundevice remove <序号或公钥前缀>&7（先用 &f/kunxundevice list &7查看序号）'
+  remove-not-found: '&c没有找到匹配 &f{target} &c的设备，请核对序号或公钥前缀。'
+  remove-ok: '&a已删除设备 &f{name}&a。该设备下次登录需要输入密码。当前还剩 &f{remaining} &a台。'
+  remove-failed: '&c删除失败，请稍后再试或联系管理员。'
+
+# ---------------- 管理命令 ----------------
+admin:
+  help:
+    - '&b&lKunxunAuth &7管理命令'
+    - '&f/kunxunauth reload &7- 重新加载配置'
+    - '&f/kunxunauth stats &7- 查看统计信息'
+    - '&f/kunxunauth info <玩家> &7- 查看玩家账号信息'
+    - '&f/kunxunauth unregister <玩家> &7- 删除玩家账号（需加 confirm 二次确认）'
+    - '&f/kunxunauth restore <玩家> &7- 从备份恢复被删账号'
+    - '&f/kunxunauth setpassword <玩家> &7- 签发一次性密码重置码'
+    - '&f/kunxunauth unlock <玩家> &7- 解除账号锁定'
+    - '&f/kunxunauth devices <玩家> &7- 查看玩家已绑定的设备'
+    - '&f/kunxunauth revokeall <玩家> &7- 吊销玩家全部设备绑定'
+  usage-info: '&e用法：&f/kunxunauth info <玩家>'
+  usage-unregister: '&e用法：&f/kunxunauth unregister <玩家> confirm &7（不加 confirm 只会预览）'
+  usage-restore: '&e用法：&f/kunxunauth restore <玩家>'
+  unregister-preview: '&e即将删除账号 &f{player} &7（邮箱 &f{email}&7，注册于 &f{time}&7）。'
+  unregister-confirm-hint: '&e确认无误请输入：&f/kunxunauth unregister {player} confirm'
+  unregister-undo-hint: '&7误删可用 &f/kunxunauth restore {player} &7从备份恢复。'
+  account-restored: '&a已从备份恢复玩家 &f{player} &a的账号。'
+  restore-none: '&c没有找到 &f{player} &c可恢复的删除备份（或该名字已被占用）。'
+  usage-setpassword: '&e用法：&f/kunxunauth setpassword <玩家>'
+  plaintext-password-refused: '&c出于安全考虑，本命令不再接受明文密码参数。请只填玩家名，插件会签发一次性重置码。'
+  usage-unlock: '&e用法：&f/kunxunauth unlock <玩家>'
+  player-not-found: '&c没有找到玩家 &f{player} &c的账号记录。'
+  account-deleted: '&a已删除玩家 &f{player} &a的账号。'
+  password-set: '&a已为玩家 &f{player} &a设置新密码。'
+  # 重置码只回显给执行命令的人，不会写进日志
+  reset-code-issued: |-
+    &a已为 &f{player} &a签发一次性重置码：&f&l{code}
+    &7(&f{minutes} &7分钟内有效，仅可使用一次) 请把这个码私下交给玩家，让他在登录界面自行设置新密码。
+  reset-code-hint: '&7玩家下次连接本服务器时，登录界面会直接要求填入重置码和新密码。'
+  account-unlocked: '&a已解除玩家 &f{player} &a的账号锁定。'
+  stats-header: '&b&lKunxunAuth 统计'
+  stats-line: '&7- &f{key}&7: &b{value}'
+  info-header: '&b&l账号信息 &7({player})'
+  info-email: '&7邮箱：&f{email}'
+  info-registered: '&7注册时间：&f{time}'
+  info-last-login: '&7上次登录：&f{time}'
+  info-last-ip: '&7上次 IP：&f{ip}'
+  info-locked: '&7锁定状态：&f{locked}'
+
+  # ---------------- 设备绑定（管理员） ----------------
+  usage-devices: '&e用法：&f/kunxunauth devices <玩家>'
+  devices-header: '&b&l设备绑定 &7({player}) &8· &f{total} &7台'
+  devices-line: '&7- &f{name} &8· &7公钥 &f{key}&8… &7· &7绑定于 &f{bound} &7· &7最近 &f{last} &7· &7IP &f{ip}'
+  devices-empty: '&7该账号没有绑定任何设备。'
+  usage-revokeall: '&e用法：&f/kunxunauth revokeall <玩家>'
+  revokeall-done: '&a已吊销玩家 &f{player} &a的 &f{count} &a台设备绑定。'
+  revokeall-none: '&7玩家 &f{player} &7名下没有已绑定的设备，无需吊销。'

@@ -1,0 +1,14 @@
+// Forge 模块是独立的 Gradle 工程（不是 client-mod 的子工程）。
+//
+// 原因：ForgeGradle 只发布在 MinecraftForge 自己的 Maven 上，插件解析规则和
+// Fabric Loom / ModDevGradle 不一样；如果三个加载器共用一个 settings 脚本，
+// 任何一个插件仓库出问题都会让另外两个一起构建不了。
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        maven { name = 'MinecraftForge'; url = 'https://maven.minecraftforge.net/' }
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'kunxunauth-device-forge'

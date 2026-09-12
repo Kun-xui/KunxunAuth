@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>kunxun.top 验证码</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f6fa;font-family:'Microsoft YaHei','PingFang SC',Helvetica,Arial,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6fa;padding:32px 0;">
+    <tr>
+        <td align="center">
+            <table role="presentation" width="560" cellpadding="0" cellspacing="0"
+                   style="width:560px;max-width:92%;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 6px 24px rgba(20,40,80,.08);">
+                <tr>
+                    <td style="background:linear-gradient(135deg,#1e6fff 0%,#00c2ff 100%);padding:26px 32px;">
+                        <div style="font-size:20px;font-weight:700;color:#ffffff;letter-spacing:.5px;">
+                            kunxun.top Minecraft 服务器
+                        </div>
+                        <div style="font-size:13px;color:rgba(255,255,255,.85);margin-top:6px;">
+                            账号安全验证
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding:30px 32px 8px 32px;color:#2b3445;font-size:15px;line-height:1.8;">
+                        你好，<b>{player}</b>：<br>
+                        你正在为服务器账号进行邮箱验证，本次验证码是：
+                    </td>
+                </tr>
+                <tr>
+                    <td align="center" style="padding:10px 32px 6px 32px;">
+                        <div style="display:inline-block;padding:16px 34px;background:#f0f6ff;border:1px dashed #7fb2ff;border-radius:12px;">
+                            <span style="font-size:34px;font-weight:700;letter-spacing:10px;color:#1e6fff;">{code}</span>
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding:16px 32px 6px 32px;color:#5a6678;font-size:13px;line-height:1.9;">
+                        验证码在 <b style="color:#1e6fff;">{minutes} 分钟</b> 内有效，请勿转发给任何人。<br>
+                        如果不是你本人操作，请忽略本邮件。
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding:18px 32px 30px 32px;">
+                        <div style="border-top:1px solid #edf1f7;padding-top:16px;color:#9aa6b8;font-size:12px;line-height:1.8;">
+                            本邮件由系统自动发送，请勿直接回复。<br>
+                            {server} · Minecraft 服务器
+                        </div>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+</body>
+</html>

@@ -1,0 +1,56 @@
+# ==========================================================================
+#  KunxunAuth —— 仓库忽略规则
+# ==========================================================================
+
+# ---------- Java / Maven ----------
+target/
+*.class
+*.log
+
+# ---------- Gradle ----------
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# ---------- Minecraft 构建缓存 ----------
+# 这些目录里是 Mojang 的官方客户端 jar、反混淆映射、Forge/NeoForge 的
+# userdev 产物。体积以 GB 计，而且重新分发 Minecraft 二进制违反 Mojang EULA，
+# 绝对不能提交。
+**/loom-cache/
+**/mavenizer/repo/
+**/mavenizer/dependencies/
+**/moddev/artifacts/
+**/tmp/neoformruntime/
+**/tmp/createMinecraftArtifacts/
+
+# ---------- 构建产物中的中间件 ----------
+client-mod/dist/_backup/
+client-mod/dist/*.zip
+
+# ---------- 本地运行目录与设备凭据 ----------
+run/
+kunxun-device.properties
+secret.local.yml
+*.mca
+*.mcr
+
+# ---------- 密钥 / 证书 ----------
+*.pem
+*.p12
+*.jks
+*.keystore
+
+# ---------- IDE ----------
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# ---------- 系统 ----------
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ---------- 工具产物 ----------
+.trae-html-share-packages/

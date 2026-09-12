@@ -1,0 +1,34 @@
+modLoader = "javafml"
+# NeoForge 26.2 自带 FML 版本远高于 1，这里放宽下限即可
+loaderVersion = "[1,)"
+license = "MIT"
+issueTrackerURL = "https://kunxun.top/"
+
+[[mods]]
+modId = "kunxunauth_device"
+version = "${version}"
+displayName = "KunxunAuth Device"
+# 三引号里的内容会原样进入模组列表，写清楚「它是什么」和「装不装都行」
+description = '''
+KunxunAuth 设备绑定客户端。
+用本机 Ed25519 私钥对服务器下发的随机挑战签名，实现免密登录。
+不装也能正常进服，只是需要照常输入密码。
+'''
+authors = "Kunxun"
+
+# 纯客户端模组：把依赖声明成 side = "CLIENT"，
+# 这样万一被误装到服务端，FML 会明确告诉玩家「这个模组不该在这里加载」，
+# 而不是加载成功之后在没有任何玩家的服务端上白白占一份内存。
+[[dependencies.kunxunauth_device]]
+modId = "neoforge"
+type = "required"
+versionRange = "[26.2.0.87,)"
+ordering = "NONE"
+side = "CLIENT"
+
+[[dependencies.kunxunauth_device]]
+modId = "minecraft"
+type = "required"
+versionRange = "[26.2,26.3)"
+ordering = "NONE"
+side = "CLIENT"

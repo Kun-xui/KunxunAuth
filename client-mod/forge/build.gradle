@@ -1,0 +1,75 @@
+// ---------------------------------------------------------------------------
+// KunxunAuth Device —— Forge 26.2 客户端模组
+//
+// 这里用 Groovy DSL 而不是 Kotlin DSL：ForgeGradle 暴露的是动态扩展
+// （fg.forgeMaven / minecraft.dependency(...)），Kotlin DSL 里没有静态类型可依赖，
+// 写起来要靠 the<...>() 之类的反射绕路。Groovy 是 ForgeGradle 的一等公民，出错面最小。
+//
+// 版本组合是照着 26.2-65.1.3 的官方 MDK 抄的，不要凭感觉改：
+//   - ForgeGradle 必须用 7.x（6.0.54 是给旧版 MC 的，且硬性拒绝 Gradle 9）
+//   - Gradle 必须用 9.x（MDK 的 wrapper 就是 9.5.0）
+//   - 26.2 起 Forge 不再需要 mappings/deobf 配置，依赖直接用 minecraft.dependency(...)
+// ---------------------------------------------------------------------------
+
+plugins {
+    id 'java'
+    id 'net.minecraftforge.gradle' version '[7.0.17,8)'
+}
+
+group = 'top.kunxun'
+version = mod_version
+
+// Mojang 从 26.1 起向终端用户发的是 Java 25，所以模组字节码也必须是 25
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+minecraft {
+    runs {
+        configureEach {
+            workingDir = layout.projectDirectory.dir('run')
+        }
+        // 只声明客户端运行配置：这是个纯客户端模组，没有服务端入口
+        register('client')
+    }
+}
+
+repositories {
+    // mavenizer 会把 Forge 的 userdev 产物（含 fmlloader、eventbus 等）挂成一个本地仓库，
+    // 少了它 @Mod 这类注解会找不到。forgeMaven / minecraftLibsMaven 提供 Forge 本体和它的第三方依赖。
+    minecraft.mavenizer(it)
+    maven fg.forgeMaven
+    maven fg.minecraftLibsMaven
+    mavenCentral()
+}
+
+dependencies {
+    // 注意不是 minecraft "net.minecraftforge:forge:..."。
+    // 26.2 的 MC 客户端 jar 本身就是未混淆的，没有 remap 这一环，
+    // 所以 ForgeGradle 把整条依赖链用 minecraft.dependency() 一次给全。
+    implementation minecraft.dependency("net.minecraftforge:forge:${minecraft_version}-${forge_version}")
+}
+
+// 和另两个加载器完全一致：把 common 的源码目录挂进来。
+// 那三个类不引用任何 Minecraft 类，所以不需要参与任何重映射步骤。
+sourceSets.main.java.srcDirs = ['src/main/java', '../common/src/main/java']
+
+tasks.withType(JavaCompile).configureEach {
+    // Java 18+ 默认就是 UTF-8，这里写死是为了不依赖 JDK/Gradle 的默认值
+    options.encoding = 'UTF-8'
+    options.release = 25
+}
+
+// 交付要求固定产物名：KunxunAuth-Device-1.0.0-forge.jar
+jar {
+    archiveFileName = "KunxunAuth-Device-${mod_version}-forge.jar"
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    inputs.property 'version', mod_version
+    filesMatching('META-INF/mods.toml') {
+        expand 'version': mod_version
+    }
+}

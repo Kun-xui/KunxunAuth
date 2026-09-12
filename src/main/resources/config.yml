@@ -1,0 +1,252 @@
+# ==========================================================================
+#  KunxunAuth —— 预进服对话框登录系统
+#  服务器：Paper 26.2 / Minecraft 26.2  (Java 25)
+#
+#  流程说明：
+#    新玩家  连接 → 配置阶段弹【注册框】→ 填邮箱 → 收邮件验证码
+#            → 填验证码 + 设置密码 → 进入世界
+#    老玩家  连接 → 配置阶段弹【登录框】→ 填密码 → 进入世界
+#    <1.21.6 的旧客户端看不到对话框，自动降级为聊天命令 + 冻结保护
+# ==========================================================================
+
+# 消息语言文件（resources 内建 zh_CN / en）
+language: zh_CN
+
+# --------------------------------------------------------------------------
+# 数据库
+# --------------------------------------------------------------------------
+database:
+  # sqlite = 内嵌独立数据库（默认，零配置，文件在插件目录下）
+  # mysql  = 外部数据库（多台服务器共享账号数据时使用）
+  type: sqlite
+
+  sqlite:
+    # 相对于插件数据目录，例如 accounts.db → plugins/KunxunAuth/accounts.db
+    file: accounts.db
+
+  mysql:
+    host: 127.0.0.1
+    port: 3306
+    database: kunxun_auth
+    username: root
+    password: ''
+    # 所有表都会带这个前缀
+    table-prefix: kunxun_
+    use-ssl: false
+    # 连接串附加参数
+    parameters: '?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true'
+    # 连接池大小
+    pool-size: 4
+
+# --------------------------------------------------------------------------
+# 预进服对话框（Configuration 阶段）
+# --------------------------------------------------------------------------
+pre-join:
+  # 总开关。关闭后玩家直接进世界，只走聊天命令验证
+  enable: true
+  # 对话框最长等待时间（秒），超时自动踢出
+  timeout-seconds: 300
+  # 是否允许按 Esc 关闭对话框（false = 必须答完才能走）
+  allow-close-with-escape: false
+  # 玩家点“取消”按钮后是否直接踢出
+  cancel-kicks: true
+  # 能显示对话框的最低客户端协议号：771 = Minecraft 1.21.6
+  # 低于这个版本（装了 ViaVersion 的旧客户端）自动走聊天命令降级路线
+  dialog-min-protocol: 771
+  # 未检测到 ViaVersion 插件时，是否直接认为所有客户端都支持对话框
+  assume-dialog-capable-without-viaversion: true
+  # 旧客户端（协议 < dialog-min-protocol）的处理方式：
+  #   chat = 放行进世界，用聊天命令 + 冻结保护完成验证（推荐，兼容性最好）
+  #   kick = 直接踢出，提示升级客户端（安全最严，但会挡住老版本玩家）
+  legacy-client-mode: chat
+
+# --------------------------------------------------------------------------
+# 登录
+# --------------------------------------------------------------------------
+login:
+  # 未登录玩家在游戏内的最长存活时间（秒），到期踢出（仅旧客户端降级路线）
+  timeout-seconds: 120
+  # 连续输错多少次后锁定账号
+  max-failed-attempts: 5
+  # 锁定时长（分钟）
+  lockout-minutes: 10
+  # 会话保持（分钟）。0 = 关闭。同一 IP 在此时间内重连可免密登录
+  session-minutes: 0
+  min-password-length: 6
+  max-password-length: 64
+
+# --------------------------------------------------------------------------
+# 注册
+# --------------------------------------------------------------------------
+register:
+  # 是否开放新玩家注册
+  allow-registration: true
+  # 是否强制邮箱验证码（关闭 = 直接设置密码注册，不推荐）
+  require-email-verification: true
+  # 验证码有效期（分钟）
+  code-expire-minutes: 10
+  # 同一个验证码最多允许尝试几次
+  code-max-attempts: 5
+  # 同一邮箱重发验证码的最小间隔（秒）
+  code-resend-cooldown-seconds: 60
+  # 同一 IP 每小时最多注册几个账号（0 = 不限）
+  max-registrations-per-ip-per-hour: 3
+  # 同一 IP 每小时最多发送几次验证码（0 = 不限）
+  max-codes-per-ip-per-hour: 10
+  # 同一邮箱最多绑定几个账号（0 = 不限）
+  max-accounts-per-email: 1
+  # 邮箱域名黑名单（命中直接拒绝）。
+  # 白名单已经只放行国内域名，这里是第二道保险：万一以后白名单被临时清空，
+  # 常见临时邮箱仍然进不来。命中时给玩家的提示也更明确。
+  email-blacklist-domains:
+    - 10minutemail.com
+    - 10minutemail.net
+    - 20minutemail.com
+    - guerrillamail.com
+    - guerrillamail.net
+    - sharklasers.com
+    - tempmail.com
+    - tempmail.net
+    - temp-mail.org
+    - temp-mail.io
+    - tempr.email
+    - throwawaymail.com
+    - mailinator.com
+    - mailinator.net
+    - yopmail.com
+    - yopmail.net
+    - trashmail.com
+    - trashmail.net
+    - maildrop.cc
+    - getnada.com
+    - nada.email
+    - dispostable.com
+    - fakeinbox.com
+    - mailnesia.com
+    - mytemp.email
+    - moakt.com
+    - discard.email
+    - discardmail.com
+    - spam4.me
+    - grr.la
+    - chacuo.net
+    - 24mail.chacuo.net
+    - linshiyouxiang.net
+    - linshiyou.com
+    - eyunmail.com
+  # 邮箱域名白名单：不为空时，只允许这些域名注册
+  #   - 当前只放行国内主流邮箱；Gmail / Outlook / iCloud 等国外邮箱一律不放行
+  #   - 子域名也算通过：写了 qq.com 就等于放行 vip.qq.com
+  #   - 留空 [] = 不限制（只受黑名单约束），不推荐
+  #   - 这里配了哪些域名，注册对话框和 /register 提示里就会原样列给玩家看
+  #   - 名单不要超过 12 个：对话框最多完整展示 12 个，再多就会被截断成「等 N 个域名」
+  email-whitelist-domains:
+    # 腾讯
+    - qq.com
+    - foxmail.com
+    # 网易
+    - 163.com
+    - 126.com
+    - yeah.net
+    # 门户
+    - sina.com
+    - sohu.com
+    - 21cn.com
+    # 运营商
+    - 139.com
+    - 189.cn
+    - wo.cn
+    # 阿里云邮箱
+    - aliyun.com
+
+# --------------------------------------------------------------------------
+# 密码
+# --------------------------------------------------------------------------
+password:
+  # PBKDF2-HMAC-SHA256 迭代次数（OWASP 现行建议 >= 210000）
+  pbkdf2-iterations: 210000
+
+# --------------------------------------------------------------------------
+# 邮件（SMTP）
+# --------------------------------------------------------------------------
+mail:
+  enable: true
+  host: smtp.qq.com
+  # 端口决定加密方式：
+  #   465 → 隐式 SSL/TLS（SMTPS）
+  #   587 → STARTTLS（强制）
+  #    25 → 明文，可加 starttls
+  port: 587
+  starttls: true
+  ssl: false
+  # 发件邮箱账号
+  # ⚠ 本仓库是公开的，所以这里默认留空，避免把你的邮箱地址写进公开代码。
+  #   请填在 secret.yml 的 mail.account，或设置环境变量 KUNXUN_MAIL_ACCOUNT。
+  #   两者都没有时插件无法发信，启动日志会给出明确报错。
+  account: ''
+  # 邮箱授权码（不是登录密码）
+  # ⚠ 请填在 secret.yml 的 mail.password，或环境变量 KUNXUN_MAIL_PASSWORD。
+  #   不要写在这里：config.yml 是打进 jar 的默认配置，插件文件被复制/备份/分发时授权码会一起泄露。
+  #   这里留空时，插件会去 secret.yml / 环境变量里找；只有两者都没有时才读这里的值（并打告警）。
+  password: ''
+  # 发件人显示名
+  sender-name: 'kunxun.top MC'
+  # 邮件主题
+  subject: '【kunxun.top】Minecraft 服务器登录验证码'
+  # 连接超时（毫秒）
+  connection-timeout-ms: 10000
+  # 邮件正文模板文件（首次启动自动生成，可自由改成自己的样式）
+  template-file: 'email-template.html'
+  # 标题里显示的服务器名，会替换模板里的 {server}
+  server-name: 'kunxun.top'
+
+# --------------------------------------------------------------------------
+# 其他
+# --------------------------------------------------------------------------
+misc:
+  # 玩家通过验证后发送的欢迎语（支持 & 颜色代码）
+  welcome-message: '&a✔ 验证通过，欢迎回到 &bkunxun.top &a！'
+  # 玩家未验证期间头顶/Nametag 是否隐藏（防止未登录玩家被骚扰）
+  hide-unauthenticated-from-others: false
+  # 控制台 / 日志里是否记录验证码明文（排查问题时才建议开）
+  log-verification-codes: false
+  # 每个 IP 允许的并发连接数上限（0 = 不限）
+  max-connections-per-ip: 5
+  # 管理命令输出里是否把 IP 打码（/kunxunauth info）
+  # 打码后形如 1.2.*.* / 2408:****:1234，够定位问题又不至于把玩家完整 IP 留在聊天记录里
+  mask-player-ip: true
+  # /kunxunauth setpassword 签发的一次性重置码有效期（分钟）
+  # 管理员只把码交给玩家，不再直接传明文密码，密码就不会进服务器日志 / RCON 日志 / 面板历史
+  admin-reset-grant-minutes: 15
+
+# --------------------------------------------------------------------------
+# 设备免密登录（需要玩家安装 KunxunAuth-Device 客户端模组）
+#
+#   原理：每台设备本地持有一对 Ed25519 密钥，私钥永不出机器。
+#        玩家进服时服务端发一个每次都不一样的随机挑战，客户端用私钥签名回传，
+#        服务端拿登记过的公钥验签，通过就直接放行，不用输密码。
+#
+#   没装模组的玩家完全不受影响：客户端不会声明这个通道，服务端直接跳过，
+#   连接延迟为 0，照常弹密码框。
+#   装了模组但验签失败 / 超时，也只是回落到密码登录，绝不会因此被踢。
+# --------------------------------------------------------------------------
+device:
+  # 总开关。关闭后既不认设备免密，也不弹绑定提示
+  enable: true
+  # 服务器标识，参与签名，防止 A 服的应答被拿到 B 服重放。
+  # 留空 = 插件启动时生成一个随机 ID 存到插件目录的 device-server-id.txt，之后一直复用。
+  # 多台服务器共用同一份账号库时，请给每台填一个不同的固定值。
+  server-id: ''
+  # 每个账号最多能绑定几台设备（建议 3-5）
+  # 私钥文件本身就是凭据，复制到别的机器就能免密登录，所以上限是必须的：
+  # 没有上限的话，账号被盗后连「哪些是设备」都说不清。
+  max-devices-per-account: 3
+  # 发出挑战后等客户端应答的秒数。装了模组通常几十毫秒就回来，等待超时就走密码登录
+  challenge-timeout-seconds: 3
+  # 登录成功后询问「要不要绑定这台设备」的等待秒数，玩家不点就自动跳过
+  bind-prompt-seconds: 20
+  # 是否弹「绑定这台设备」的提示框
+  show-bind-prompt: true
+  # 玩家改密码 / 用邮箱重置密码后，是否自动吊销该账号的全部设备
+  # 这是账号被盗后的第一处置动作：密码改了但设备还认，等于留了一把备用钥匙
+  revoke-on-password-change: true
