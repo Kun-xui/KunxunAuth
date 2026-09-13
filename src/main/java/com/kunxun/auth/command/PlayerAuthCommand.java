@@ -208,6 +208,15 @@ public final class PlayerAuthCommand implements CommandExecutor, TabCompleter {
                 send(player, messages.raw("dialog.error-email-not-found"));
                 return;
             }
+            // 防御纵深：改密目标只能是「当前连接的玩家」。
+            // 发码环节已经拦过一次，这里是第二道 —— 就算有人拿着别人的验证码，
+            // 也永远改不到别的账号头上。
+            if (!account.username().equalsIgnoreCase(player.getName())) {
+                authService.repository().audit(player.getName(), "RESET_CROSS_ACCOUNT_BLOCKED",
+                        ip, Emails.mask(email));
+                send(player, messages.raw("dialog.error-email-other-account"));
+                return;
+            }
             authService.repository().updatePassword(account.id(), authService.hasher().hash(password));
             authService.repository().audit(account.username(), "RESET_PASSWORD_CHAT", ip, Emails.mask(email));
         } catch (SQLException e) {
@@ -318,14 +327,24 @@ public final class PlayerAuthCommand implements CommandExecutor, TabCompleter {
                 return;
             }
             // 邮箱有没有注册过，流程和提示都必须一样 —— 否则能被人拿来枚举账号
-            boolean registered;
+            Account owner;
             try {
-                registered = authService.repository().findByEmail(email).isPresent();
+                owner = authService.repository().findByEmail(email).orElse(null);
             } catch (SQLException e) {
                 logger.log(Level.SEVERE, "[KunxunAuth] 按邮箱查询账号失败", e);
                 send(player, messages.raw("dialog.error-internal"));
                 return;
             }
+            // 「邮箱穿越」拦截：填的邮箱必须绑定「当前连接的玩家」。
+            // 小号找回密码填成大号邮箱时，验证码发到大号邮箱后照样能改掉大号的
+            // 密码 —— 发码前直接拦死，改密目标只能是「当前连接的玩家」。
+            if (owner != null && !owner.username().equalsIgnoreCase(player.getName())) {
+                authService.repository().audit(player.getName(), "RESET_CROSS_ACCOUNT_BLOCKED",
+                        ip, Emails.mask(email));
+                send(player, messages.raw("dialog.error-email-other-account"));
+                return;
+            }
+            boolean registered = owner != null;
             long cooldown = authService.codes().resendCooldownRemaining(
                     VerificationCodes.Purpose.RESET, email, config.register().resendCooldownSeconds());
             if (cooldown > 0) {

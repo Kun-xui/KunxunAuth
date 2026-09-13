@@ -607,7 +607,17 @@ public final class AuthService {
             }
             deliver = true;
         } else {
-            deliver = existsAccount(email);
+            // 找回密码：邮箱必须绑定「当前连接的这个玩家」。
+            // 小号填大号的邮箱时，验证码虽然只会发到大号邮箱（收件人拿不到就过不了），
+            // 但只要持有邮箱就能改掉大号密码 —— 这就是「邮箱穿越」，
+            // 发码前直接拦死，不让玩家对着别人的邮箱干等验证码。
+            Account owner = findAccountByEmail(email);
+            if (owner != null && !owner.username().equalsIgnoreCase(session.playerName())) {
+                repository.audit(session.playerName(), "RESET_CROSS_ACCOUNT_BLOCKED", session.ip(),
+                        Emails.mask(email));
+                return EmailStep.error(messages.raw("dialog.error-email-other-account"));
+            }
+            deliver = owner != null;
         }
 
         long cooldown = codes.resendCooldownRemaining(purpose, email,
@@ -635,11 +645,16 @@ public final class AuthService {
 
     /** 这个邮箱是否已经绑定了账号（只用于内部判断，不把结果告诉玩家） */
     private boolean existsAccount(String email) {
+        return findAccountByEmail(email) != null;
+    }
+
+    /** 按邮箱查账号（内部判断用，查询异常时按「查不到」处理并记日志） */
+    private Account findAccountByEmail(String email) {
         try {
-            return repository.findByEmail(email).isPresent();
+            return repository.findByEmail(email).orElse(null);
         } catch (SQLException e) {
             logger.log(Level.SEVERE, "[KunxunAuth] 按邮箱查询账号失败", e);
-            return false;
+            return null;
         }
     }
 
@@ -790,6 +805,14 @@ public final class AuthService {
             Account account = repository.findByEmail(email).orElse(null);
             if (account == null) {
                 return FinishStep.error(messages.raw("dialog.error-email-not-found"));
+            }
+            // 防御纵深：改密目标只能是「当前连接的玩家」。
+            // 发码环节已经拦过一次，这里是第二道——即使有人绕过发码拦截
+            // （比如先有别人的验证码在手），也永远改不到别的账号头上。
+            if (!account.username().equalsIgnoreCase(session.playerName())) {
+                repository.audit(session.playerName(), "RESET_CROSS_ACCOUNT_BLOCKED", session.ip(),
+                        Emails.mask(email));
+                return FinishStep.error(messages.raw("dialog.error-email-other-account"));
             }
             repository.updatePassword(account.id(), hasher.hash(password));
             repository.audit(account.username(), "RESET_PASSWORD", session.ip(), Emails.mask(email));

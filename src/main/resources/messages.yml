@@ -97,6 +97,10 @@ dialog:
   error-email-not-whitelisted: '&c该邮箱域名不在允许名单内。可用域名：&b{domains}'
   error-email-in-use: '&c这个邮箱已经绑定过其他账号了。'
   error-email-not-found: '&c这个邮箱没有对应的账号，请检查是否输错。'
+  # 找回密码时的「邮箱穿越」拦截：填的邮箱绑定的账号 ≠ 当前连接的玩家。
+  # 小号找回密码填成大号邮箱时，验证码会发到大号邮箱，校验通过后会把大号的
+  # 密码改掉 —— 这一步必须拦死，改密目标只能是「当前连接的玩家」。
+  error-email-other-account: '&c这个邮箱绑定的是另一个账号，不能用当前玩家身份重置密码。如果这是你的邮箱，请用绑定的那个游戏名登录后再操作。'
   error-code-empty: '&c请填写邮箱验证码。'
   error-code-wrong: '&c验证码不正确，还可以尝试 {remaining} 次。'
   error-code-expired: '&c验证码已过期，请点击“重新发送验证码”。'
