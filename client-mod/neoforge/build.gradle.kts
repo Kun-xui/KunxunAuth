@@ -52,7 +52,7 @@ tasks.withType<JavaCompile>().configureEach {
     options.release.set(25)
 }
 
-// 交付要求固定产物名：KunxunAuth-Device-1.0.0-neoforge.jar
+// 交付要求固定产物名：KunxunAuth-Device-1.1.0-neoforge.jar
 tasks.named<Jar>("jar") {
     archiveFileName.set("KunxunAuth-Device-${project.version}-neoforge.jar")
 }

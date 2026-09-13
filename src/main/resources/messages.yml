@@ -22,6 +22,11 @@ dialog:
   login-title: '&b&l登录 &8· &7kunxun.top'
   reset-title: '&b&l找回密码 &8· &7第 {step} 步 / 共 2 步'
   waiting-title: '&e正在处理…'
+  # 设备免密校验期间的等待框。用独立的键名（device-wait-*）是有意的：
+  # 老服升级上来时 messages.yml 里已经存在 waiting-* 这组键（旧模板写的「正在发送验证码」），
+  # 复用会让等设备校验的框显示一段发验证码的文案；新键名在老服文件里不存在，
+  # 会自动回落到这份默认文案。
+  device-wait-title: '&e正在验证设备…'
 
   # 正文
   register-body-step1: |-
@@ -49,6 +54,9 @@ dialog:
   waiting-body: |-
     &7正在发送验证码，请稍候…
     &8通常需要几秒钟。
+  device-wait-body: |-
+    &7正在用本机的设备密钥向服务器证明身份，请稍候…
+    &8通常 1~3 秒；如果没有绑定成功，会自动切到密码登录。
 
   # 输入框标签
   input-email: '&f邮箱地址'
@@ -68,6 +76,9 @@ dialog:
   button-back-to-login: '&7返回登录'
   button-cancel: '&c取消'
   button-wait: '&7请稍候…'
+  # 设备验证等待框上的按钮（同样用独立键名，理由见上面 device-wait-title 的注释）
+  button-device-wait: '&7请稍候…'
+  tooltip-device-wait: '&7服务器正在校验这台设备，通常 1~3 秒'
 
   # 悬停提示
   tooltip-send-code: '&7点击后验证码会发送到上面填写的邮箱'
@@ -140,6 +151,20 @@ dialog:
   info-code-sent-neutral: '&a如果该邮箱已注册，验证码已发送，请查收邮件（注意垃圾箱）。'
   info-waiting-mail: '&7正在发送验证码，请稍候…'
 
+  # 发信邮箱还没配好时，登录/注册/找回密码的框里会多这一段。
+  # 目的：玩家不该对着一个「点了没反应」的按钮猜，管理员也该一眼看到缺什么。
+  mail-not-configured: |-
+    &6⚠ 本服还没有配置发信邮箱
+    &7现在注册不需要邮箱验证码，直接设置密码即可；
+    &7找回密码暂时用不了（发不出邮件）。
+    &8管理员：启动时的控制台里有填写教程，或执行 /kunxunauth setup 查看。
+
+  # 免密登录没走通时，显示在密码框里的一句话。区分两种原因的用意：
+  # 「没绑定」是常见情况（本机密钥还没绑到这个账号），「指纹不一致」意味着换了机器
+  # 或者密钥文件被复制走了，两种情况玩家该做的事不一样。
+  info-device-unbound: '&e本机的设备密钥还没有绑定到这个账号，请用密码登录一次后重新绑定。'
+  info-device-changed: '&e这台机器的硬件与绑定记录不一致，旧绑定已作废：请用密码登录一次并重新绑定。'
+
 # ---------------- 踢出提示 ----------------
 kick:
   cancelled: '&c你取消了验证，无法进入服务器。'
@@ -187,10 +212,52 @@ device:
   remove-ok: '&a已删除设备 &f{name}&a。该设备下次登录需要输入密码。当前还剩 &f{remaining} &a台。'
   remove-failed: '&c删除失败，请稍后再试或联系管理员。'
 
+# ---------------- 语音聊天提示 ----------------
+# 插件不含语音功能，只是告诉玩家怎么开（语音是 Simple Voice Chat 客户端模组的事）。
+# 只有服务端确实加载了 Simple Voice Chat 时才会发这句，避免提示变成误导。
+voice:
+  # {key} 会替换成 config.yml 里的 voice.settings-key
+  hint: '&7语音聊天：按 &b{key} &7打开语音设置与麦克风（需要装 Simple Voice Chat 模组）'
+
+# ---------------- 首次开服引导（发信邮箱还没配好时） ----------------
+# 两种场合会用到这些文字：
+#   1. 插件启动时控制台打一遍（自动剥掉颜色码，输出纯文本）
+#   2. 管理员在游戏里执行 /kunxunauth setup
+# 面向的是第一次开服、连「SMTP 授权码」都没听过的人，所以写得尽量具体。
+setup:
+  header: '&b&l════════ KunxunAuth 首次配置引导 ════════'
+  footer: '&b&l═══════════════════════════════════════════'
+  mail-state-ok: '&a当前状态：发信邮箱已配置，玩家能正常收验证码。'
+  mail-state-missing: '&e当前状态：还没有可用的发信邮箱 —— 注册会跳过邮箱验证，找回密码发不出信。'
+  voice-header: '&b&l语音聊天（Simple Voice Chat）'
+  lines:
+    - '&7玩家注册需要收到邮箱验证码，所以服务器需要一个能发信的邮箱。'
+    - '&7按下面任一种方式填上，就恢复正常：'
+    - ''
+    - '&f方式一（推荐）：编辑 &bplugins/KunxunAuth/secret.yml'
+    - '&f      mail:'
+    - "&f        account: '&b你的邮箱@qq.com&f'"
+    - "&f        password: '&b邮箱授权码（不是邮箱登录密码）&f'"
+    - ''
+    - '&f方式二：设置环境变量 &bKUNXUN_MAIL_ACCOUNT &f和 &bKUNXUN_MAIL_PASSWORD'
+    - '&7     （适合 Docker / 面板部署；环境变量优先级最高）'
+    - ''
+    - '&7常见邮箱怎么开启 SMTP：'
+    - '&f· QQ 邮箱&7：设置 → 账号 → POP3/SMTP 服务 → 开启后生成授权码'
+    - '&7  &bhttps://service.mail.qq.com/detail/0/75'
+    - '&f· 网易 163 / 126&7：设置 → POP3/SMTP/IMAP → 开启服务 → 新增授权码'
+    - '&7  &bhttps://help.mail.163.com/'
+    - '&f· Gmail&7：先在账号安全里开启两步验证，再生成「应用专用密码」'
+    - '&7  &bhttps://support.google.com/accounts/answer/185833'
+    - '&f· Outlook / 微软邮箱&7：默认关闭 SMTP 基本认证，不推荐拿来发信，建议用 QQ 或 163'
+    - ''
+    - '&7改完执行 &f/kunxunauth reload &7即可生效，不用重启服务器。'
+
 # ---------------- 管理命令 ----------------
 admin:
   help:
     - '&b&lKunxunAuth &7管理命令'
+    - '&f/kunxunauth setup &7- 首次配置引导（发信邮箱怎么填 / 语音端口怎么走）'
     - '&f/kunxunauth reload &7- 重新加载配置'
     - '&f/kunxunauth stats &7- 查看统计信息'
     - '&f/kunxunauth info <玩家> &7- 查看玩家账号信息'
@@ -232,7 +299,9 @@ admin:
   # ---------------- 设备绑定（管理员） ----------------
   usage-devices: '&e用法：&f/kunxunauth devices <玩家>'
   devices-header: '&b&l设备绑定 &7({player}) &8· &f{total} &7台'
-  devices-line: '&7- &f{name} &8· &7公钥 &f{key}&8… &7· &7绑定于 &f{bound} &7· &7最近 &f{last} &7· &7IP &f{ip}'
+  devices-line: '&7- &f{name} &8· &7绑定于 &f{bound} &7· &7最近 &f{last} &7· &7IP &f{ip}'
+  # 管理视角需要指纹：它是判断「这台机器还是不是原来那台」的唯一依据
+  devices-line-fp: '&7- &f{name} &8· &7公钥 &f{key}&8… &7· &7机器 &f{fp}&8… &7· &7绑定于 &f{bound} &7· &7最近 &f{last} &7· &7IP &f{ip}'
   devices-empty: '&7该账号没有绑定任何设备。'
   usage-revokeall: '&e用法：&f/kunxunauth revokeall <玩家>'
   revokeall-done: '&a已吊销玩家 &f{player} &a的 &f{count} &a台设备绑定。'

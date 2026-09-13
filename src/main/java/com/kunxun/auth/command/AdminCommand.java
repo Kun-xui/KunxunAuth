@@ -6,6 +6,7 @@ import com.kunxun.auth.config.Messages;
 import com.kunxun.auth.data.Account;
 import com.kunxun.auth.device.DeviceRecord;
 import com.kunxun.auth.util.Emails;
+import com.kunxun.auth.util.Text;
 import net.kyori.adventure.text.Component;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -58,6 +59,7 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
         }
         switch (args[0].toLowerCase(Locale.ROOT)) {
             case "help" -> sendHelp(sender);
+            case "setup" -> setup(sender);
             case "reload" -> reload(sender);
             case "stats" -> stats(sender);
             case "info" -> info(sender, args);
@@ -74,6 +76,34 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
 
     private void sendHelp(CommandSender sender) {
         plugin.messages().lines("admin.help").forEach(sender::sendMessage);
+    }
+
+    // ------------------------------------------------------------------- setup
+
+    /**
+     * 首次配置引导：把「发信邮箱去哪填、怎么开 SMTP」「语音的端口要怎麼转」直接念一遍。
+     *
+     * <p>存在的理由是：这两件事出问题时，日志里的原话（「邮件不可用」「语音连不上」）
+     * 对一个刚开服的人没有任何指导意义。这条命令把答案摆在面前 ——
+     * 按行看下去就知道下一步点哪里。
+     */
+    private void setup(CommandSender sender) {
+        Messages messages = plugin.messages();
+        sender.sendMessage(messages.plain("setup.header"));
+        sender.sendMessage(messages.plain(mailAvailableNow()
+                ? "setup.mail-state-ok" : "setup.mail-state-missing"));
+        plugin.setupGuide().lines().forEach(line -> sender.sendMessage(Text.of(line)));
+        sender.sendMessage(messages.plain("setup.footer"));
+
+        sender.sendMessage(Component.empty());
+        sender.sendMessage(messages.plain("setup.voice-header"));
+        plugin.voiceDiagnostics().report().lines().forEach(line -> sender.sendMessage(Text.of(line)));
+        sender.sendMessage(messages.plain("setup.footer"));
+    }
+
+    /** 发信现在到底能不能用（每次都重新问一次，reload 之后结论会跟着变） */
+    private boolean mailAvailableNow() {
+        return plugin.mailAvailable();
     }
 
     // ------------------------------------------------------------------ reload
@@ -132,6 +162,8 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
         lines.add(statLine(messages, "配置阶段会话", plugin.sessions().configSessionCount()));
         lines.add(statLine(messages, "待验证验证码", plugin.codes().size()));
         lines.add(statLine(messages, "已绑定设备", plugin.devices().totalBound()));
+        lines.add(statLine(messages, "设备指纹校验",
+                config.device().fingerprintMode().name().toLowerCase(Locale.ROOT)));
         lines.add(statLine(messages, "邮件服务", plugin.mailAvailable() ? "可用" : "不可用"));
         lines.add(statLine(messages, "ViaVersion", plugin.capability().viaPresent() ? "已安装" : "未安装"));
         lines.forEach(sender::sendMessage);
@@ -350,9 +382,10 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
             lines.add(messages.plain("admin.devices-empty"));
         } else {
             for (DeviceRecord record : records) {
-                lines.add(messages.plain("admin.devices-line",
+                lines.add(messages.plain("admin.devices-line-fp",
                         "key", record.keyPrefix(),
                         "name", record.displayName(),
+                        "fp", record.fingerprintPrefix(),
                         "bound", formatTime(record.createdAt()),
                         "last", formatTime(record.lastSeenAt()),
                         "ip", displayIp(record.lastIp())));
@@ -430,7 +463,7 @@ public final class AdminCommand implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            return List.of("help", "reload", "stats", "info", "unregister", "restore",
+            return List.of("help", "setup", "reload", "stats", "info", "unregister", "restore",
                     "setpassword", "unlock", "devices", "revokeall");
         }
         if (args.length == 2) {

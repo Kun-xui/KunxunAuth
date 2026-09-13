@@ -9,7 +9,9 @@ import net.minecraftforge.network.SimpleChannel;
 import top.kunxun.device.DeviceIdentity;
 import top.kunxun.device.DeviceProtocol;
 
-import java.nio.file.Path;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -31,17 +33,20 @@ public final class KunxunAuthDeviceForge {
 
     private static final Logger LOGGER = Logger.getLogger("KunxunAuth-Device");
 
-    /** 私钥文件名，位于游戏目录；与账号无关，同机多账号共用一把设备密钥 */
-    private static final String KEY_FILE_NAME = "kunxun-device.properties";
-
+    /** 私钥文件按账号分开存（游戏目录下的 kunxun-device/），见 DeviceKeyStore#fileFor */
     public static final SimpleChannel CHANNEL = ChannelBuilder
             .named(Identifier.fromNamespaceAndPath(DeviceProtocol.NAMESPACE, DeviceProtocol.PATH))
-            .networkProtocolVersion(DeviceProtocol.PROTOCOL_VERSION)
+            .networkProtocolVersion(DeviceProtocol.CHANNEL_NETWORK_VERSION)
             .optional()
             .simpleChannel();
 
-    /** 懒加载 + volatile：配置阶段的包处理不在渲染主线程上 */
-    private static volatile DeviceIdentity identity;
+    /**
+     * 每个账号一份设备身份，缓存起来避免每次挑战都重算硬件指纹。
+     *
+     * <p>键是账号名的小写形式。1.0.0 是全机共用一把密钥，导致同一台电脑上的第二个账号
+     * 在服务端撞公钥唯一约束、永远绑不上设备；按账号分开之后这个问题不存在。
+     */
+    private static final Map<String, DeviceIdentity> IDENTITIES = new ConcurrentHashMap<>();
 
     static {
         CHANNEL.configuration(protocol -> protocol
@@ -73,11 +78,14 @@ public final class KunxunAuthDeviceForge {
     private static void onChallenge(DeviceChallengePayload payload, CustomPayloadEvent.Context context) {
         try {
             DeviceProtocol.Challenge challenge = DeviceProtocol.parseChallenge(payload.text());
-            DeviceIdentity device = identity();
+            // 用挑战里的玩家名定位密钥：服务端认的是这条连接上的玩家名，
+            // 客户端也按它取密钥，两边的「账号」才是同一个
+            DeviceIdentity device = identity(challenge.playerName());
             String response = DeviceProtocol.encodeResponse(
                     device.publicKeyBase64(),
                     device.sign(challenge),
-                    device.deviceName());
+                    device.deviceName(),
+                    device.fingerprint());
 
             CHANNEL.send(new DeviceResponsePayload(response), context.getConnection());
             LOGGER.fine("[KunxunAuth] 已向服务器发送设备应答");
@@ -86,17 +94,10 @@ public final class KunxunAuthDeviceForge {
         }
     }
 
-    private static DeviceIdentity identity() {
-        DeviceIdentity local = identity;
-        if (local != null) {
-            return local;
-        }
-        synchronized (KunxunAuthDeviceForge.class) {
-            if (identity == null) {
-                Path keyFile = Minecraft.getInstance().gameDirectory.toPath().resolve(KEY_FILE_NAME);
-                identity = DeviceIdentity.load(keyFile);
-            }
-            return identity;
-        }
+    /** 取（必要时生成）某个账号在这台机器上的设备身份；懒加载，只处理挑战时才会碰磁盘 */
+    private static DeviceIdentity identity(String account) {
+        String key = account == null ? "" : account.toLowerCase(Locale.ROOT);
+        return IDENTITIES.computeIfAbsent(key, ignored -> DeviceIdentity.load(
+                Minecraft.getInstance().gameDirectory.toPath(), account));
     }
 }

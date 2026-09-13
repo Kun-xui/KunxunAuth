@@ -7,7 +7,9 @@ import net.minecraft.client.Minecraft;
 import top.kunxun.device.DeviceIdentity;
 import top.kunxun.device.DeviceProtocol;
 
-import java.nio.file.Path;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -22,17 +24,14 @@ public final class KunxunAuthDeviceFabric implements ClientModInitializer {
 
     private static final Logger LOGGER = Logger.getLogger("KunxunAuth-Device");
 
-    /** 私钥文件名。放在游戏目录下，和账号无关，所以同一台机器上的所有账号共用一把设备密钥。 */
-    private static final String KEY_FILE_NAME = "kunxun-device.properties";
-
     /**
-     * 设备身份是懒加载的：只有真的收到挑战才会去读/生成密钥。
+     * 每个账号一份设备身份，缓存起来避免每次挑战都重算指纹（读硬件要起子进程）。
      *
-     * <p>如果放在 {@code onInitializeClient} 里预先加载，那么「玩家只是开了个单人游戏」
-     * 也会在磁盘上凭空多出一个密钥文件——没有连接到需要它的服务器时，这个文件没有存在意义。
-     * volatile + 双重检查是因为配置阶段的包处理未必在主线程上。
+     * <p>键是账号名的小写形式。按账号分开存是刻意的：同一台电脑上一个正版号加一个
+     * 离线小号，各自持有一把密钥、各自绑一次 —— 1.0.0 那种「一台机器共用一把」的写法
+     * 会让第二个账号在服务端撞上公钥唯一约束，永远绑不上设备。
      */
-    private static volatile DeviceIdentity identity;
+    private static final Map<String, DeviceIdentity> IDENTITIES = new ConcurrentHashMap<>();
 
     @Override
     public void onInitializeClient() {
@@ -58,11 +57,14 @@ public final class KunxunAuthDeviceFabric implements ClientModInitializer {
     /** 解析挑战 → 签名 → 回发应答；失败由调用方兜底 */
     private static void handleChallenge(DeviceChallengePayload payload) {
         DeviceProtocol.Challenge challenge = DeviceProtocol.parseChallenge(payload.text());
-        DeviceIdentity device = identity();
+        // 用挑战里的玩家名定位密钥：服务端认的是这条连接上的玩家名，
+        // 客户端也按它取密钥，两边的「账号」才是同一个
+        DeviceIdentity device = identity(challenge.playerName());
         String response = DeviceProtocol.encodeResponse(
                 device.publicKeyBase64(),
                 device.sign(challenge),
-                device.deviceName());
+                device.deviceName(),
+                device.fingerprint());
 
         if (ClientConfigurationNetworking.canSend(DeviceResponsePayload.TYPE)) {
             ClientConfigurationNetworking.send(new DeviceResponsePayload(response));
@@ -73,17 +75,15 @@ public final class KunxunAuthDeviceFabric implements ClientModInitializer {
         }
     }
 
-    private static DeviceIdentity identity() {
-        DeviceIdentity local = identity;
-        if (local != null) {
-            return local;
-        }
-        synchronized (KunxunAuthDeviceFabric.class) {
-            if (identity == null) {
-                Path keyFile = Minecraft.getInstance().gameDirectory.toPath().resolve(KEY_FILE_NAME);
-                identity = DeviceIdentity.load(keyFile);
-            }
-            return identity;
-        }
+    /**
+     * 取（必要时生成）某个账号在这台机器上的设备身份。
+     *
+     * <p>懒加载：只有真的收到挑战才会去读/生成密钥。放在 {@code onInitializeClient}
+     * 里预先加载的话，「玩家只是开了个单人游戏」也会在磁盘上凭空多出一个密钥文件。
+     */
+    private static DeviceIdentity identity(String account) {
+        String key = account == null ? "" : account.toLowerCase(Locale.ROOT);
+        return IDENTITIES.computeIfAbsent(key, ignored -> DeviceIdentity.load(
+                Minecraft.getInstance().gameDirectory.toPath(), account));
     }
 }

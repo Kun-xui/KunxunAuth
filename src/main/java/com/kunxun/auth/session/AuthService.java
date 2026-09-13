@@ -63,6 +63,14 @@ public final class AuthService {
     /** 每 IP 的限流窗口长度 */
     private static final long HOUR_MILLIS = 3_600_000L;
 
+    /**
+     * 等待对话框点击时的轮询切片（毫秒）。
+     *
+     * <p>它决定「客户端已经断开」被发现的延迟上限。取 250ms 是个折中：
+     * 比这更短就是空转，更长则玩家能感觉到退出时那一下延迟。
+     */
+    private static final long AWAIT_POLL_MILLIS = 250L;
+
     private final AuthConfig config;
     private final Messages messages;
     private final AccountRepository repository;
@@ -127,7 +135,7 @@ public final class AuthService {
         } else if (account != null) {
             mode = Mode.LOGIN;
         } else if (!config.register().allowRegistration()) {
-            return Decision.deny(messages.get("kick.registration-disabled"));
+            return deny(connection, messages.get("kick.registration-disabled"));
         } else {
             mode = emailVerification ? Mode.REGISTER_EMAIL : Mode.REGISTER_DIRECT;
         }
@@ -138,32 +146,42 @@ public final class AuthService {
 
         // 设备挑战在这里就登记并发出去，但**不阻塞**：响应到不到、什么时候到，
         // 都由客户端自己的节奏决定，玩家的登录速度不该被一台没装模组的客户端拖住。
+        //
+        // 唯一会停下来等的情况是「这个账号名下确实绑过设备」——那时命中了就是免密直进，
+        // 值得等；等待期间会先弹一个「正在验证设备…」的框，玩家看到的不是卡住的加载画面。
         ChallengeRegistry.Handshake handshake = null;
         DeviceService.Proof deviceProof = null;
         if (devices.enabled()) {
             handshake = devices.issue(connection, ChallengeRegistry.Purpose.LOGIN, name);
             if (mode == Mode.LOGIN && devices.hasAnyDevice(name)) {
-                // 只有在账号名下确实绑过设备时，才值得停下来等那几秒：命中就是免密直进
+                showWaitingDialog(connection, session);
                 deviceProof = devices.await(connection, handshake);
                 handshake = null;
-                if (deviceProof != null && devices.isBoundTo(name, deviceProof.publicKey())) {
-                    repository.audit(name, "LOGIN_DEVICE", ip,
-                            "device=" + deviceProof.deviceName());
-                    sessions.authenticate(session.playerId());
-                    sessions.remember(session.playerId(), ip, config.login().sessionMinutes());
-                    devices.touch(deviceProof.publicKey(), ip);
-                    return Decision.allow();
+                if (deviceProof != null) {
+                    DeviceService.Authorization verdict = devices.authorize(name, deviceProof);
+                    if (verdict == DeviceService.Authorization.ALLOWED) {
+                        repository.audit(name, "LOGIN_DEVICE", ip,
+                                "device=" + deviceProof.deviceName());
+                        sessions.authenticate(session.playerId());
+                        sessions.remember(session.playerId(), ip, config.login().sessionMinutes());
+                        devices.touch(deviceProof.publicKey(), ip);
+                        return Decision.allow();
+                    }
+                    // 免密没成，但要把原因写在密码框里，别让玩家对着一个密码框猜
+                    info = verdict == DeviceService.Authorization.FINGERPRINT_MISMATCH
+                            ? messages.raw("dialog.info-device-changed")
+                            : messages.raw("dialog.info-device-unbound");
                 }
             }
         }
 
         while (true) {
             if (!connection.isConnected()) {
-                return Decision.deny(null);
+                return deny(connection, null);
             }
             long remaining = deadline - System.currentTimeMillis();
             if (remaining <= 0) {
-                return Decision.deny(messages.get("kick.timeout",
+                return deny(connection, messages.get("kick.timeout",
                         "seconds", config.preJoin().timeoutSeconds()));
             }
 
@@ -185,9 +203,9 @@ public final class AuthService {
             ClickPayload click = await(connection, session, dialog, remaining);
             if (click == null) {
                 if (!connection.isConnected()) {
-                    return Decision.deny(null);
+                    return deny(connection, null);
                 }
-                return Decision.deny(messages.get("kick.timeout",
+                return deny(connection, messages.get("kick.timeout",
                         "seconds", config.preJoin().timeoutSeconds()));
             }
 
@@ -200,7 +218,7 @@ public final class AuthService {
                 case LOGIN -> {
                     switch (action) {
                         case CANCEL -> {
-                            return cancelDecision();
+                            return cancelDecision(connection);
                         }
                         case LOGIN_FORGOT -> {
                             mode = Mode.RESET_EMAIL;
@@ -212,7 +230,7 @@ public final class AuthService {
                                     return finish(connection, session, name, ip, handshake, deviceProof);
                                 }
                                 case KICK -> {
-                                    return Decision.deny(step.message());
+                                    return deny(connection, step.message());
                                 }
                                 case ERROR -> error = step.text();
                                 case GONE -> {
@@ -232,7 +250,7 @@ public final class AuthService {
                 case REGISTER_EMAIL -> {
                     switch (action) {
                         case CANCEL -> {
-                            return cancelDecision();
+                            return cancelDecision(connection);
                         }
                         case SEND_CODE -> {
                             EmailStep step = handleEmailSubmit(session, click.input(AuthAction.INPUT_EMAIL),
@@ -254,7 +272,7 @@ public final class AuthService {
                     switch (action) {
                         case CANCEL -> {
                             codes.invalidate(VerificationCodes.Purpose.REGISTER, session.email());
-                            return cancelDecision();
+                            return cancelDecision(connection);
                         }
                         case REGISTER_RESEND -> {
                             SendOutcome outcome = resendCode(session, VerificationCodes.Purpose.REGISTER);
@@ -271,7 +289,7 @@ public final class AuthService {
                                     return finish(connection, session, name, ip, handshake, deviceProof);
                                 }
                                 case KICK -> {
-                                    return Decision.deny(step.message());
+                                    return deny(connection, step.message());
                                 }
                                 case ERROR -> error = step.text();
                                 case GONE -> mode = Mode.LOGIN;
@@ -285,7 +303,7 @@ public final class AuthService {
                 case REGISTER_DIRECT -> {
                     switch (action) {
                         case CANCEL -> {
-                            return cancelDecision();
+                            return cancelDecision(connection);
                         }
                         case REGISTER_DIRECT -> {
                             FinishStep step = handleDirectRegister(session, click);
@@ -294,7 +312,7 @@ public final class AuthService {
                                     return finish(connection, session, name, ip, handshake, deviceProof);
                                 }
                                 case KICK -> {
-                                    return Decision.deny(step.message());
+                                    return deny(connection, step.message());
                                 }
                                 case ERROR -> error = step.text();
                                 case GONE -> mode = Mode.LOGIN;
@@ -308,7 +326,7 @@ public final class AuthService {
                 case RESET_EMAIL -> {
                     switch (action) {
                         case CANCEL -> {
-                            return cancelDecision();
+                            return cancelDecision(connection);
                         }
                         case BACK -> mode = Mode.LOGIN;
                         case RESET_SEND -> {
@@ -332,7 +350,7 @@ public final class AuthService {
                     switch (action) {
                         case CANCEL -> {
                             codes.invalidate(VerificationCodes.Purpose.RESET, session.email());
-                            return cancelDecision();
+                            return cancelDecision(connection);
                         }
                         case REGISTER_RESEND, RESET_RESEND -> {
                             SendOutcome outcome = resendCode(session, VerificationCodes.Purpose.RESET);
@@ -351,7 +369,7 @@ public final class AuthService {
                                     info = messages.raw("chat.reset-success");
                                 }
                                 case KICK -> {
-                                    return Decision.deny(step.message());
+                                    return deny(connection, step.message());
                                 }
                                 case ERROR -> error = step.text();
                                 case GONE -> mode = Mode.RESET_EMAIL;
@@ -364,7 +382,7 @@ public final class AuthService {
                 case FORCE_RESET -> {
                     switch (action) {
                         case CANCEL -> {
-                            return cancelDecision();
+                            return cancelDecision(connection);
                         }
                         case FORCE_RESET -> {
                             FinishStep step = handleForceResetSubmit(session, click);
@@ -374,7 +392,7 @@ public final class AuthService {
                                     return finish(connection, session, name, ip, handshake, deviceProof);
                                 }
                                 case KICK -> {
-                                    return Decision.deny(step.message());
+                                    return deny(connection, step.message());
                                 }
                                 case ERROR -> error = step.text();
                                 case GONE -> mode = Mode.LOGIN;
@@ -465,14 +483,16 @@ public final class AuthService {
             return;
         }
 
-        DeviceService.BindResult result = devices.bind(name, proof.publicKey(), proof.deviceName(), ip);
+        DeviceService.BindResult result = devices.bind(name, proof.publicKey(), proof.deviceName(),
+                proof.fingerprint(), ip);
         repository.audit(name, result == DeviceService.BindResult.OK ? "DEVICE_BIND_OK" : "DEVICE_BIND_FAIL",
                 ip, "device=" + proof.deviceName() + " result=" + result);
         if (result == DeviceService.BindResult.OK) {
             logger.info("[KunxunAuth] " + name + " 绑定了新设备「" + proof.deviceName()
                     + "」，现在共 " + devices.count(name) + " 台");
         } else if (result == DeviceService.BindResult.CONFLICT) {
-            logger.warning("[KunxunAuth] 设备「" + proof.deviceName() + "」已绑在别的账号名下，拒绝 " + name);
+            logger.warning("[KunxunAuth] 设备「" + proof.deviceName() + "」的公钥已绑在别的账号名下，拒绝 "
+                    + name + "（同一台机器的第二个账号请升级客户端模组到 1.1.0+）");
         }
     }
 
@@ -1016,15 +1036,55 @@ public final class AuthService {
         return sendCode(purpose, email, session.playerName());
     }
 
-    private Decision cancelDecision() {
+    private Decision cancelDecision(PlayerConfigurationConnection connection) {
         if (config.preJoin().cancelKicks()) {
-            return Decision.deny(messages.get("kick.cancelled"));
+            return deny(connection, messages.get("kick.cancelled"));
         }
         return Decision.allow();
     }
 
     /**
+     * 统一的「拒绝并断开」出口。
+     *
+     * <p>它比直接 {@code Decision.deny(...)} 多做一件事：先把这条连接上的设备挑战
+     * 与补发任务停掉。补发跑在异步调度器上、每 500ms 往这条连接写一次包，
+     * 不先停掉就断开的话，发包会和断连撞在同一条连接上 ——
+     * 表现出来就是「点了退出，还要等服务器才给断开提示」。
+     *
+     * <p>所有走向断开的路径都必须走这里，漏一处就漏掉一次清理。
+     */
+    private Decision deny(PlayerConfigurationConnection connection, Component message) {
+        devices.discard(connection);
+        return Decision.deny(message);
+    }
+
+    /**
+     * 等设备应答期间先给玩家一个交代。
+     *
+     * <p>没有这个框的话，绑定过设备的账号进服时会先面对几秒钟「什么都不发生」的
+     * 加载画面，玩家对这段时间的统一解读是「服务器卡了」。框里只有一个
+     * 不起副作用的「继续等待」按钮，不做任何判定。
+     */
+    private void showWaitingDialog(PlayerConfigurationConnection connection, LoginSession session) {
+        if (!config.device().showWaitingDialog()) {
+            return;
+        }
+        try {
+            connection.getAudience().showDialog(dialogs.waiting());
+        } catch (RuntimeException e) {
+            // 只是少了一个提示框，不影响设备免密本身
+            logger.log(Level.FINE, "[KunxunAuth] 设备验证等待框显示失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * 显示对话框并等待玩家点击。
+     *
+     * <p>用 {@link TimeoutException} 切片轮询，而不是一次性等满剩余时间：
+     * 玩家关掉游戏、或者点了客户端的「断开连接」时，服务端<b>收不到任何点击事件</b>，
+     * 只能靠 {@code isConnected()} 发现。一次性等的话，这条流程会抱着一个早已
+     * 死掉的连接继续等满 {@code pre-join.timeout-seconds}（默认 300 秒）——
+     * 线程、会话、设备挑战全部被占着不放。
      *
      * @return null 表示超时或连接已断开
      */
@@ -1033,11 +1093,24 @@ public final class AuthService {
         CompletableFuture<ClickPayload> future = session.beginAwait();
         try {
             connection.getAudience().showDialog(dialog);
-            return future.get(Math.max(1000L, remainingMillis), TimeUnit.MILLISECONDS);
+            long deadline = System.currentTimeMillis() + Math.max(1000L, remainingMillis);
+            while (true) {
+                long slice = Math.min(AWAIT_POLL_MILLIS, deadline - System.currentTimeMillis());
+                if (slice <= 0L) {
+                    return null;
+                }
+                try {
+                    return future.get(slice, TimeUnit.MILLISECONDS);
+                } catch (TimeoutException sliceEnded) {
+                    if (!connection.isConnected()) {
+                        return null;
+                    }
+                }
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return null;
-        } catch (ExecutionException | TimeoutException | java.util.concurrent.CancellationException e) {
+        } catch (ExecutionException | CancellationException e) {
             return null;
         } catch (RuntimeException e) {
             logger.log(Level.FINE, "[KunxunAuth] 显示对话框失败: " + e.getMessage(), e);

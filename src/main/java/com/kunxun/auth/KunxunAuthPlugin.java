@@ -12,6 +12,8 @@ import com.kunxun.auth.device.ChallengeRegistry;
 import com.kunxun.auth.device.DeviceChannelListener;
 import com.kunxun.auth.device.DeviceRepository;
 import com.kunxun.auth.device.DeviceService;
+import com.kunxun.auth.diagnostics.SetupGuide;
+import com.kunxun.auth.diagnostics.VoiceDiagnostics;
 import com.kunxun.auth.dialog.DialogFactory;
 import com.kunxun.auth.dialog.PreJoinListener;
 import com.kunxun.auth.listener.ProtectionListener;
@@ -85,6 +87,11 @@ public final class KunxunAuthPlugin extends JavaPlugin {
     /** 设备应答的入站监听器；未启用设备免密时为 null */
     private DeviceChannelListener deviceListener;
 
+    /** 首次开服引导（发信邮箱没配好时在控制台打教程） */
+    private SetupGuide setupGuide;
+    /** 语音聊天的端口/版本诊断（只读配置） */
+    private VoiceDiagnostics voiceDiagnostics;
+
     private final List<Listener> listeners = new ArrayList<>();
     private BukkitTask sweepTask;
 
@@ -105,6 +112,15 @@ public final class KunxunAuthPlugin extends JavaPlugin {
                 + " · 邮件=" + (mail.available() ? "可用" : "不可用")
                 + " · 预进服对话框=" + (config.preJoin().enable() ? "开启" : "关闭")
                 + " · 设备免密=" + (config.device().enable() ? "开启" : "关闭"));
+
+        // 没配发信邮箱时，把「该填什么、去哪填、怎么开 SMTP」在控制台讲一遍。
+        // 面向的是第一次开服、也不知道授权码是什么的人：不给教程，他们只会以为插件坏了。
+        setupGuide.logIfNeeded(config.mail().enable(), mail.available());
+
+        // 语音聊天的端口/版本诊断（只读配置，不参与语音协议）
+        if (config.voice().diagnose()) {
+            voiceDiagnostics.log();
+        }
     }
 
     @Override
@@ -139,12 +155,14 @@ public final class KunxunAuthPlugin extends JavaPlugin {
         this.capability = new DialogCapability(getLogger(),
                 config.preJoin().assumeDialogCapableWithoutViaVersion(),
                 config.preJoin().dialogMinProtocol());
-        this.dialogs = new DialogFactory(messages, config);
+        this.dialogs = new DialogFactory(messages, config, mail.available());
         this.deviceRepository = new DeviceRepository(database);
         this.deviceChallenges = new ChallengeRegistry();
         this.devices = new DeviceService(config, deviceRepository, deviceChallenges, this, getLogger());
         this.authService = new AuthService(config, messages, repository, hasher, codes, mail,
                 limiter, sessions, dialogs, devices, getLogger());
+        this.setupGuide = new SetupGuide(messages, getLogger());
+        this.voiceDiagnostics = new VoiceDiagnostics(this, getLogger());
 
         registerListeners();
         registerDeviceChannels();
@@ -209,8 +227,9 @@ public final class KunxunAuthPlugin extends JavaPlugin {
 
     private void registerListeners() {
         listeners.clear();
-        listeners.add(new PreJoinListener(config, messages, authService, sessions, capability, getLogger()));
-        listeners.add(new ProtectionListener(config, messages, sessions, freeze));
+        listeners.add(new PreJoinListener(config, messages, authService, sessions, capability, devices,
+                getLogger()));
+        listeners.add(new ProtectionListener(config, messages, sessions, freeze, voiceDiagnostics));
         listeners.forEach(listener -> getServer().getPluginManager().registerEvents(listener, this));
     }
 
@@ -421,6 +440,16 @@ public final class KunxunAuthPlugin extends JavaPlugin {
     /** 设备免密登录门面；设备功能关闭时仍然非 null，只是 enabled() 为 false */
     public DeviceService devices() {
         return devices;
+    }
+
+    /** 首次开服引导（{@code /kunxunauth setup} 用它打印邮箱配置教程） */
+    public SetupGuide setupGuide() {
+        return setupGuide;
+    }
+
+    /** 语音聊天诊断（{@code /kunxunauth setup} 用它回显端口/版本结论） */
+    public VoiceDiagnostics voiceDiagnostics() {
+        return voiceDiagnostics;
     }
 
     public Database database() {

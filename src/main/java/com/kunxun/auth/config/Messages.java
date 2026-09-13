@@ -86,6 +86,21 @@ public final class Messages {
         return result;
     }
 
+    /**
+     * 取多行消息的原始字符串（带占位符替换、不转 Component）。
+     *
+     * <p>给控制台引导这类「要按行打印纯文本」的场景用：控制台不接受 Component，
+     * 走 {@link #lines(String, Object...)} 再转回来会把颜色码带进去。
+     */
+    public List<String> rawLines(String key, Object... placeholders) {
+        List<String> raw = config.getStringList(key);
+        List<String> result = new ArrayList<>(raw.size());
+        for (String line : raw) {
+            result.add(Text.fill(line == null ? "" : line, placeholders));
+        }
+        return result;
+    }
+
     /** 取多行消息拼成单个换行 Component */
     public Component block(String key, Object... placeholders) {
         return Component.join(JoinConfiguration.newlines(), lines(key, placeholders));

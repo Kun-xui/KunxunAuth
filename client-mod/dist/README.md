@@ -20,13 +20,14 @@ client-mod/
 ├── build-all.ps1               一键依次构建三个加载器
 ├── common/                     三个加载器共用的纯 Java 代码，不含任何 Minecraft 引用
 │   └── src/main/java/top/kunxun/device/
-│       ├── DeviceProtocol.java     协议的编解码 + 数据结构
-│       ├── DeviceKeyStore.java     私钥文件（properties）读写
-│       └── DeviceIdentity.java     密钥生成/加载 + 签名
+│       ├── DeviceProtocol.java      协议的编解码 + 数据结构
+│       ├── DeviceKeyStore.java      私钥文件（加密 properties）读写 + 按账号分文件
+│       ├── DeviceIdentity.java      密钥生成/加载 + 签名
+│       └── DeviceFingerprint.java   本机硬件指纹（CPU/主板/磁盘/MachineGuid 摘要）
 ├── fabric/                     Fabric 模块（独立 Gradle 工程）
 ├── neoforge/                   NeoForge 模块（独立 Gradle 工程）
 ├── forge/                      Forge 模块（独立 Gradle 工程）
-└── dist/                       构建产物（KunxunAuth-Device-1.0.0-<loader>.jar）
+└── dist/                       构建产物（KunxunAuth-Device-1.1.0-<loader>.jar）
 ```
 
 `common/` **不是**一个 Gradle 子模块，它就是三个源码目录，被各个加载器的
@@ -157,9 +158,9 @@ Fabric 数秒、NeoForge 约 3 秒、Forge 约 5 分 11 秒。
 
 | 加载器 | 文件 |
 | --- | --- |
-| Fabric | `KunxunAuth-Device-1.0.0-fabric.jar` |
-| NeoForge | `KunxunAuth-Device-1.0.0-neoforge.jar` |
-| Forge | `KunxunAuth-Device-1.0.0-forge.jar` |
+| Fabric | `KunxunAuth-Device-1.1.0-fabric.jar` |
+| NeoForge | `KunxunAuth-Device-1.1.0-neoforge.jar` |
+| Forge | `KunxunAuth-Device-1.1.0-forge.jar` |
 
 **按你客户端用的加载器装一个，不要装多个。** 装两个会让同一个挑战被签名两次，
 服务端收到两遍 `response`（第二遍因为 nonce 已作废而失败），除了在日志里刷错误没有别的作用。
@@ -171,9 +172,14 @@ Fabric 数秒、NeoForge 约 3 秒、Forge 约 5 分 11 秒。
 - **NeoForge**：把 jar 丢进 `.minecraft/mods/`。NeoForge 版本需 ≥ 26.2.0.87。
 - **Forge**：把 jar 丢进 `.minecraft/mods/`。Forge 版本需 ≥ 26.2-65.1.3。
 
-首次启动会在游戏目录下生成 `kunxun-device.properties`。**这个文件就是你的设备凭据**，
-谁拿到它谁就能用你这台设备免密登录，不要分享、不要截图、不要提交到 Git 仓库。
-换电脑时把新设备的公钥重新绑定一次就好，不要复制这个文件。
+首次启动会在游戏目录下生成 `kunxun-device/<账号>-<摘要>.properties`（**一个账号一份**，同一台电脑上的不同账号互不干扰）。**这个文件就是你的设备凭据**，不要分享、不要截图、不要提交到 Git 仓库。
+
+文件里的私钥是加密的，密钥由本机硬件指纹派生（CPU / 主板 / 系统盘 / 机器 ID）。所以：
+
+- 把文件复制到另一台机器 → 解不开 → 客户端自动生成一把新密钥 → 需要重新绑定一次。**复制文件换不来免密**。
+- 换了主板 / 重装系统 → 同样是重新绑定一次。要做的事永远只有一件：用密码登录一次，然后在弹出的框里点「绑定这台设备」。
+
+从 1.0.0 升级上来时，旧的 `kunxun-device.properties`（全机共用一份）会被自动改名为 `kunxun-device.properties.legacy-bak`，每个账号各自重新绑定一次即可。
 
 ---
 
@@ -257,6 +263,9 @@ OptiFine 的更新长期滞后于 Minecraft 正式版，而且它和 Fabric/NeoF
 | 现象 | 原因 |
 | --- | --- |
 | 进服后仍然要求输密码 | 模组没装 / 装错加载器 / 服务端没在配置阶段发挑战。看客户端日志里有没有 `[KunxunAuth]` 开头的行 |
-| 日志刷 `协议版本不匹配` | 服务端插件和模组的协议版本不一致，对照 PROTOCOL.md 的 `version` 字段 |
+| 同一台电脑上第二个账号绑不上设备 | 模组还是 1.0.0。那版全机共用一把密钥，服务端公钥是全局唯一的，第二个账号必然撞冲突；升到 1.1.0+ 后每个账号各有一把 |
+| 升级后提示要重新绑定 | 正常。旧的全机共用密钥已归档成 `.legacy-bak`，每个账号各绑一次 |
+| 日志刷 `协议版本不匹配` | 服务端插件和模组的应答版本不一致，对照 PROTOCOL.md 的 `version` 字段（挑战侧恒为 `1`，老模组不会被踢） |
 | 日志刷 `负载字段数不对` | 服务端拼字符串时某个字段里混进了 `\|`，检查 playerName |
-| 换了电脑要重新绑定 | 正常。私钥在本机，新机器是新设备，需要重新绑定一次 |
+| 换了电脑 / 换了主板 | 正常。私钥用本机硬件指纹加密，指纹变了就解不开，会自动生成新密钥，重新绑定一次即可 |
+| 日志里出现「读不到 CPU / 主板 / 磁盘等硬件标识」 | 系统不允许读硬件信息（精简版系统、受限容器等）。此时指纹只能由主机名拼出来，绑定关系会明显变弱，但不影响免密本身可用 |

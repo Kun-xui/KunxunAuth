@@ -53,7 +53,7 @@ tasks.withType<JavaCompile>().configureEach {
     options.release.set(25)
 }
 
-// 交付要求固定产物名：KunxunAuth-Device-1.0.0-fabric.jar
+// 交付要求固定产物名：KunxunAuth-Device-1.1.0-fabric.jar
 tasks.named<Jar>("jar") {
     archiveFileName.set("KunxunAuth-Device-${project.version}-fabric.jar")
 }

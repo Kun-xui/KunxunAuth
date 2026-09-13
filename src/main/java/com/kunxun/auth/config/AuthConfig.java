@@ -30,6 +30,23 @@ public final class AuthConfig {
         KICK
     }
 
+    /**
+     * 设备指纹（硬件标识）的校验强度。
+     *
+     * <p>客户端把 CPU / 主板 / 系统盘 / 机器 ID 的摘要一起上报，服务端把它存进设备表。
+     * 默认 {@link #RECORD} 只记录不拦人：那串摘要来自公开的硬件信息，
+     * 换主板、刷 BIOS、换系统盘、虚拟机快照还原都可能让它变一次，
+     * 一旦配成 {@link #STRICT} 就等于把这台设备当成了新机器。
+     */
+    public enum FingerprintMode {
+        /** 不校验也不记录（只当协议字段不存在） */
+        OFF,
+        /** 记录并写日志，不一致时仍然放行（默认，最稳） */
+        RECORD,
+        /** 记录并强制校验：与绑定时不一致就当这台设备不是原来的机器，免密作废 */
+        STRICT
+    }
+
     public record SqliteSettings(File file) {
     }
 
@@ -74,7 +91,17 @@ public final class AuthConfig {
      */
     public record DeviceSettings(boolean enable, String serverId, int maxDevicesPerAccount,
                                  int challengeTimeoutSeconds, int bindPromptSeconds,
-                                 boolean showBindPrompt, boolean revokeOnPasswordChange) {
+                                 boolean showBindPrompt, boolean revokeOnPasswordChange,
+                                 FingerprintMode fingerprintMode, boolean showWaitingDialog) {
+    }
+
+    /**
+     * 语音聊天（Simple Voice Chat）相关的提示与诊断。
+     *
+     * <p>只负责「把端口/版本讲清楚」和「告诉玩家按哪个键」，不参与语音协议本身 ——
+     * 那部分在客户端模组里，插件替不了。
+     */
+    public record VoiceSettings(boolean diagnose, boolean joinHint, String settingsKey) {
     }
 
     private final String language;
@@ -88,11 +115,12 @@ public final class AuthConfig {
     private final MailSettings mail;
     private final MiscSettings misc;
     private final DeviceSettings device;
+    private final VoiceSettings voice;
 
     private AuthConfig(String language, DatabaseType databaseType, SqliteSettings sqlite, MySqlSettings mysql,
                        PreJoinSettings preJoin, LoginSettings login, RegisterSettings register,
                        PasswordSettings password, MailSettings mail, MiscSettings misc,
-                       DeviceSettings device) {
+                       DeviceSettings device, VoiceSettings voice) {
         this.language = language;
         this.databaseType = databaseType;
         this.sqlite = sqlite;
@@ -104,6 +132,7 @@ public final class AuthConfig {
         this.mail = mail;
         this.misc = misc;
         this.device = device;
+        this.voice = voice;
     }
 
     // ------------------------------------------------------------------ 读取
@@ -215,10 +244,27 @@ public final class AuthConfig {
                 Math.max(1, c.getInt("device.challenge-timeout-seconds", 3)),
                 Math.max(5, c.getInt("device.bind-prompt-seconds", 20)),
                 c.getBoolean("device.show-bind-prompt", true),
-                c.getBoolean("device.revoke-on-password-change", true));
+                c.getBoolean("device.revoke-on-password-change", true),
+                fingerprintMode(c.getString("device.fingerprint-mode", "record")),
+                c.getBoolean("device.show-waiting-dialog", true));
+
+        VoiceSettings voice = new VoiceSettings(
+                c.getBoolean("voice.diagnose", true),
+                c.getBoolean("voice.join-hint", true),
+                c.getString("voice.settings-key", "B").trim());
 
         return new AuthConfig(language, type, sqlite, mysql, preJoin, login, register, password, mail, misc,
-                device);
+                device, voice);
+    }
+
+    /** 解析指纹模式；写错就退回默认值并留一条日志，不能让一个拼写错误挡住启动 */
+    private static FingerprintMode fingerprintMode(String raw) {
+        String value = raw == null ? "" : raw.trim().toUpperCase(Locale.ROOT);
+        try {
+            return value.isEmpty() ? FingerprintMode.RECORD : FingerprintMode.valueOf(value);
+        } catch (IllegalArgumentException e) {
+            return FingerprintMode.RECORD;
+        }
     }
 
     /** 留空的 server-id 会落到这个文件里长期复用 */
@@ -339,5 +385,9 @@ public final class AuthConfig {
 
     public DeviceSettings device() {
         return device;
+    }
+
+    public VoiceSettings voice() {
+        return voice;
     }
 }

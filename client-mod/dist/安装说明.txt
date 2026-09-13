@@ -10,9 +10,9 @@ KunxunAuth Device —— 免密登录客户端模组（安装说明）
 
 一、先选对文件（只装一个！）
 ---------------------------------------------------------
-  Fabric   客户端  →  KunxunAuth-Device-1.0.0-fabric.jar
-  Forge    客户端  →  KunxunAuth-Device-1.0.0-forge.jar
-  NeoForge 客户端  →  KunxunAuth-Device-1.0.0-neoforge.jar
+  Fabric   客户端  →  KunxunAuth-Device-1.1.0-fabric.jar
+  Forge    客户端  →  KunxunAuth-Device-1.1.0-forge.jar
+  NeoForge 客户端  →  KunxunAuth-Device-1.1.0-neoforge.jar
 
   本服（kunxun.top）目前用的是 Minecraft 26.2 + Forge，
   所以绝大多数人只需要装 forge 那一个。
@@ -48,11 +48,19 @@ KunxunAuth Device —— 免密登录客户端模组（安装说明）
 
 四、几句提醒
 ---------------------------------------------------------
-  - 密钥文件在这里：.minecraft\kunxun-device.properties
+  - 密钥文件在这里：.minecraft\kunxun-device\<你的账号名>-<摘要>.properties
+    每个账号各有一份，互不影响。
     它等同于你的钥匙，别发给别人、别传到网盘。
-    别人拿到它，就能用你的账号免密进服。
-  - 换电脑 / 重装系统后密钥会重新生成，
-    需要重新登录一次密码并重新绑定。
+
+  - 文件里的私钥是用你这台电脑的硬件信息（CPU、主板、硬盘）加密过的，
+    所以把它复制到别的电脑上解不开、也用不了——复制文件换不来免密。
+    反过来，换了电脑或者换了硬件，重新登录一次密码、再点一次
+    【绑定这台设备】就好了。
+
+  - 从 1.0.0 升到 1.1.0 的话，旧的那份 kunxun-device.properties 会被
+    自动改名成 kunxun-device.properties.legacy-bak 留着。
+    升级后每个账号都需要重新绑定一次（用密码登录一次，点一下绑定即可）。
+
   - 每个账号最多能绑 3 台设备，满了先删旧的。
   - 这个模组不含任何游戏资源，也不修改任何游戏内容，
     对帧数、存档、其它模组都没有影响。

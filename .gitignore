@@ -34,6 +34,24 @@ secret.local.yml
 *.mca
 *.mcr
 
+# ---------- 运行时数据（开源仓库里绝对不能出现）----------
+# plugins/ 是服务器上的插件目录：里面有真实的 secret.yml（邮箱授权码）、
+# accounts.db（玩家密码哈希）以及服务器自己生成的 device-server-id.txt。
+# 整份忽略，免得哪天把服务器目录拷进工作区再一起提交上去。
+plugins/
+# 账号库：含 PBKDF2 密码哈希与玩家邮箱
+**/accounts.db
+**/accounts.db-*
+**/accounts.db.*
+# 服务器设备标识：参与设备签名，泄露就等于给了跨服重放挑战的机会
+**/device-server-id.txt
+# 真实凭据文件；仓库里只保留 src/main/resources/secret.yml 这个空模板
+**/secret.yml
+!src/main/resources/secret.yml
+# 玩家/白名单等运行期数据
+**/usercache.json
+**/whitelist.json
+
 # ---------- 密钥 / 证书 ----------
 *.pem
 *.p12
@@ -53,4 +71,5 @@ Desktop.ini
 .DS_Store
 
 # ---------- 工具产物 ----------
+.workbuddy/
 .trae-html-share-packages/

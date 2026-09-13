@@ -20,7 +20,7 @@ import java.util.Optional;
 public final class DeviceRepository {
 
     private static final String COLUMNS =
-            "id, public_key, username, device_name, created_at, last_seen_at, last_ip";
+            "id, public_key, username, device_name, created_at, last_seen_at, last_ip, device_fingerprint";
 
     private final Database database;
 
@@ -96,12 +96,14 @@ public final class DeviceRepository {
      * <p>公钥上有唯一约束，所以「同一台设备被两个账号抢绑」这件事由数据库兜住，
      * 应用层的 count 检查只负责给出友好提示。
      *
+     * @param fingerprint 客户端上报的硬件指纹摘要；v1 老模组没有这一项，传空串
      * @return true = 插入成功；false = 这把公钥已经绑过了
      */
-    public boolean bind(String username, String publicKey, String deviceName, String ip) throws SQLException {
+    public boolean bind(String username, String publicKey, String deviceName, String fingerprint, String ip)
+            throws SQLException {
         String sql = "INSERT INTO " + devices()
-                + " (public_key, username, username_lower, device_name, created_at, last_seen_at, last_ip)"
-                + " VALUES (?, ?, ?, ?, ?, ?, ?)";
+                + " (public_key, username, username_lower, device_name, created_at, last_seen_at, last_ip,"
+                + " device_fingerprint) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         long now = System.currentTimeMillis();
         try {
             database.query(connection -> {
@@ -113,6 +115,7 @@ public final class DeviceRepository {
                     statement.setLong(5, now);
                     statement.setLong(6, now);
                     statement.setString(7, limit(ip, 45));
+                    statement.setString(8, fingerprintOf(fingerprint));
                     return statement.executeUpdate();
                 }
             });
@@ -125,8 +128,37 @@ public final class DeviceRepository {
         }
     }
 
-    /** 删掉一台设备（吊销）。返回是否真的删掉了 */
-    public boolean revoke(String publicKey) throws SQLException {
+    /**
+     * 补记 / 覆盖一台设备的指纹。
+     *
+     * <p>用在「这台设备本来没有指纹记录」的补登上：老模组（v1 应答）绑定的设备
+     * 指纹栏是空的，玩家后来升级到新模组，第一次带指纹登录时把这一栏补上，
+     * 之后就能走指纹校验。已经存过指纹时不会被改写 —— 那属于「换机器」，
+     * 由 {@code DeviceService} 明确吊销后重新绑定，而不是悄悄换掉证据。
+     *
+     * @return true = 确实更新了一行
+     */
+    public boolean fillFingerprintIfMissing(String publicKey, String fingerprint) throws SQLException {
+        if (publicKey == null || publicKey.isEmpty()) {
+            return false;
+        }
+        String value = fingerprintOf(fingerprint);
+        if (value.isEmpty()) {
+            return false;
+        }
+        String sql = "UPDATE " + devices() + " SET device_fingerprint = ?"
+                + " WHERE public_key = ? AND (device_fingerprint IS NULL OR device_fingerprint = '')";
+        return database.query(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, value);
+                statement.setString(2, publicKey);
+                return statement.executeUpdate() > 0;
+            }
+        });
+    }
+
+    /** 按公钥直接删一行，不分账号（调用方已经确认过归属时使用） */
+    public boolean deleteByPublicKey(String publicKey) throws SQLException {
         String sql = "DELETE FROM " + devices() + " WHERE public_key = ?";
         return database.query(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(sql)) {
@@ -134,6 +166,11 @@ public final class DeviceRepository {
                 return statement.executeUpdate() > 0;
             }
         });
+    }
+
+    /** 删掉一台设备（吊销）。返回是否真的删掉了 */
+    public boolean revoke(String publicKey) throws SQLException {
+        return deleteByPublicKey(publicKey);
     }
 
     /**
@@ -200,7 +237,12 @@ public final class DeviceRepository {
                 rs.getString("device_name"),
                 rs.getLong("created_at"),
                 rs.getLong("last_seen_at"),
-                rs.getString("last_ip"));
+                rs.getString("last_ip"),
+                rs.getString("device_fingerprint") == null ? "" : rs.getString("device_fingerprint"));
+    }
+
+    private static String fingerprintOf(String fingerprint) {
+        return limit(DeviceProtocol.normalizeFingerprint(fingerprint), DeviceProtocol.MAX_FINGERPRINT);
     }
 
     private static String normalize(String value) {

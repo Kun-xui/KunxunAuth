@@ -35,9 +35,19 @@ public final class DialogFactory {
     private final Messages messages;
     private final AuthConfig config;
 
-    public DialogFactory(Messages messages, AuthConfig config) {
+    /**
+     * 发信邮箱是否已经配好。
+     *
+     * <p>没配好时，登录/注册/找回密码的框里会多一句状态说明（{@code dialog.mail-not-configured}）：
+     * 玩家不该对着一个「点了没反应」的找回密码按钮猜；顺带也让管理员一眼看到该去补配置。
+     * 值在插件启动时算好传进来，{@code /kunxunauth reload} 会重新构造这个工厂。
+     */
+    private final boolean mailReady;
+
+    public DialogFactory(Messages messages, AuthConfig config, boolean mailReady) {
         this.messages = messages;
         this.config = config;
+        this.mailReady = mailReady;
         validateInputKeys();
     }
 
@@ -65,6 +75,7 @@ public final class DialogFactory {
     public Dialog registerEmail(String errorLine, String infoLine) {
         List<DialogBody> body = new ArrayList<>();
         body.add(body("dialog.register-body-step1"));
+        appendMailNotice(body);
         appendAllowedDomains(body);
         appendFeedback(body, errorLine, infoLine);
 
@@ -102,6 +113,7 @@ public final class DialogFactory {
     public Dialog registerDirect(String errorLine, String infoLine) {
         List<DialogBody> body = new ArrayList<>();
         body.add(body("dialog.register-body-step1"));
+        appendMailNotice(body);
         appendAllowedDomains(body);
         appendFeedback(body, errorLine, infoLine);
 
@@ -125,6 +137,7 @@ public final class DialogFactory {
         body.add(body("dialog.login-body",
                 "maxAttempts", config.login().maxFailedAttempts(),
                 "lockout", config.login().lockoutMinutes()));
+        appendMailNotice(body);
         appendFeedback(body, errorLine, infoLine);
 
         List<DialogInput> inputs = List.of(
@@ -143,6 +156,7 @@ public final class DialogFactory {
     public Dialog resetEmail(String errorLine, String infoLine) {
         List<DialogBody> body = new ArrayList<>();
         body.add(body("dialog.reset-body-step1"));
+        appendMailNotice(body);
         appendFeedback(body, errorLine, infoLine);
 
         List<DialogInput> inputs = List.of(
@@ -203,6 +217,28 @@ public final class DialogFactory {
     }
 
     // ------------------------------------------------------------ 设备绑定
+
+    /**
+     * 设备免密校验期间的等待框。
+     *
+     * <p>绑定过设备的账号进服时，服务端要先等几秒客户端回签名，这几秒里如果什么都不显示，
+     * 玩家看到的是一动不动的加载画面。这个框没有输入框、只有一个不起副作用的按钮 ——
+     * 对话框的按钮列表不能为空（客户端解析会失败），所以必须给一个。
+     *
+     * <p>键名刻意用 {@code device-wait-*} 这一组新键，而不是复用旧模板里已经存在的
+     * {@code waiting-*}：老服升级上来时，那些旧键在它自己的 messages.yml 里是有值的
+     * （1.0.0 模板里就写着「正在发送验证码」），复用就会出现「等设备验证却提示正在发验证码」。
+     * 用新键名则老服的 messages.yml 里没有它们，自动回落到 jar 内建的默认文案。
+     */
+    public Dialog waiting() {
+        List<DialogBody> body = new ArrayList<>();
+        body.add(body("dialog.device-wait-body"));
+
+        List<ActionButton> buttons = List.of(
+                button("dialog.button-device-wait", "dialog.tooltip-device-wait", AuthAction.DEVICE_WAIT));
+
+        return build(messages.plain("dialog.device-wait-title"), body, List.of(), buttons);
+    }
 
     /**
      * 登录 / 注册成功之后，问一句要不要把这台设备绑上。
@@ -269,6 +305,19 @@ public final class DialogFactory {
         }
         if (infoLine != null && !infoLine.isBlank()) {
             body.add(DialogBody.plainMessage(Text.of(infoLine), BODY_WIDTH));
+        }
+    }
+
+    /**
+     * 邮箱还没配好时，把「现在是什么状态」写在框里。
+     *
+     * <p>插件在没有发信账号时的行为是「注册跳过邮箱验证、找回密码发不出信」——
+     * 玩家只会看到一个点了没反应的按钮，管理员也不知道少了什么。
+     * 这一句的作用就是把这件事说穿：零基础的人看完就知道下一步该找谁、该填什么。
+     */
+    private void appendMailNotice(List<DialogBody> body) {
+        if (!mailReady) {
+            body.add(body("dialog.mail-not-configured"));
         }
     }
 

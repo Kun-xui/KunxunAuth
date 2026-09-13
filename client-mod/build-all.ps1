@@ -25,7 +25,7 @@ $ErrorActionPreference = 'Continue'
 $root    = $PSScriptRoot
 $dist    = Join-Path $root 'dist'
 $modules = @('fabric', 'neoforge', 'forge')
-$version = '1.0.0'
+$version = '1.1.0'
 
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
 

@@ -2,6 +2,7 @@ package com.kunxun.auth.listener;
 
 import com.kunxun.auth.config.AuthConfig;
 import com.kunxun.auth.config.Messages;
+import com.kunxun.auth.diagnostics.VoiceDiagnostics;
 import com.kunxun.auth.session.FreezeService;
 import com.kunxun.auth.session.SessionManager;
 import com.kunxun.auth.util.Text;
@@ -46,13 +47,15 @@ public final class ProtectionListener implements Listener {
     private final Messages messages;
     private final SessionManager sessions;
     private final FreezeService freeze;
+    private final VoiceDiagnostics voice;
 
     public ProtectionListener(AuthConfig config, Messages messages, SessionManager sessions,
-                              FreezeService freeze) {
+                              FreezeService freeze, VoiceDiagnostics voice) {
         this.config = config;
         this.messages = messages;
         this.sessions = sessions;
         this.freeze = freeze;
+        this.voice = voice;
     }
 
     private boolean locked(Player player) {
@@ -73,6 +76,7 @@ public final class ProtectionListener implements Listener {
             if (welcome != null && !welcome.isBlank()) {
                 player.sendMessage(Text.of(welcome));
             }
+            sendVoiceHint(player);
             return;
         }
         if (exempt(player)) {
@@ -80,6 +84,19 @@ public final class ProtectionListener implements Listener {
             return;
         }
         freeze.freeze(player);
+    }
+
+    /**
+     * 进服后告诉玩家语音聊天按哪个键。
+     *
+     * <p>只在服务端真的加载着 Simple Voice Chat 时才发：插件不在的时候这句提示会变成误导，
+     * 玩家照着按会发现什么都没有。文案与按键名都在 config.yml / messages.yml 里，可改。
+     */
+    private void sendVoiceHint(Player player) {
+        if (!config.voice().joinHint() || voice == null || !voice.active()) {
+            return;
+        }
+        player.sendMessage(messages.get("voice.hint", "key", config.voice().settingsKey()));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)

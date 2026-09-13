@@ -19,8 +19,15 @@ import java.util.Base64;
  *
  * <pre>
  *   服务端 → 客户端：1|nonce|serverId|playerName
- *   客户端 → 服务端：1|publicKey|signature|deviceName
+ *   客户端 → 服务端：2|publicKey|signature|deviceName|fingerprint   （v2，当前）
+ *   客户端 → 服务端：1|publicKey|signature|deviceName               （v1，老模组）
  * </pre>
+ *
+ * <p><b>为什么挑战还是 1、应答变成 2。</b> 挑战的字段在 v1 起就没变过，而客户端
+ * 只认「版本号等于自己支持的那一个」，所以把挑战的版本号提到 2 会让所有老模组
+ * 直接静默不回包 —— 等于用一次升级把玩家的免密功能整体关掉。应答侧的版本号
+ * 只由服务端消费，所以新增字段放在应答上、并且保持对 v1 的解析，
+ * 这样老模组连到新插件照样能免密，只是设备指纹那一栏是空的。
  *
  * <p>签名覆盖的内容是 {@code nonce + "|" + serverId + "|" + playerName}
  * 的 UTF-8 字节（<b>没有</b>版本号前缀）。服务端验签时必须用「自己记录的」
@@ -54,8 +61,17 @@ public final class DeviceProtocol {
     /** Forge 客户端上「应答」消息的注册序号（后注册，分到 1） */
     public static final int FORGE_INDEX_RESPONSE = 1;
 
-    /** 协议版本，恒为 "1" */
+    /** 挑战的协议版本，恒为 "1"（字段自 v1 起未变，见类注释） */
     public static final String VERSION = "1";
+
+    /** 应答版本：v1 = 4 字段，不带设备指纹（老模组） */
+    public static final String RESPONSE_VERSION_LEGACY = "1";
+
+    /** 应答版本：v2 = 5 字段，末尾多一个设备指纹摘要 */
+    public static final String RESPONSE_VERSION = "2";
+
+    /** 设备指纹摘要的最大长度（客户端给的是 SHA-256 的 Base64url 截断值） */
+    public static final int MAX_FINGERPRINT = 64;
 
     private static final char SEPARATOR = '|';
     private static final String SEPARATOR_TEXT = "|";
@@ -125,11 +141,24 @@ public final class DeviceProtocol {
     }
 
     /** 客户端 → 服务端应答的解析结果 */
-    public record Response(String publicKey, String signature, String deviceName) {
+    public record Response(String publicKey, String signature, String deviceName, String fingerprint) {
+
+        /** v1 应答没有指纹：留一个空值，让上层不用到处判 null */
+        public Response(String publicKey, String signature, String deviceName) {
+            this(publicKey, signature, deviceName, "");
+        }
+
+        /** 这份应答是否带设备指纹（v2 客户端才有） */
+        public boolean hasFingerprint() {
+            return fingerprint != null && !fingerprint.isEmpty();
+        }
     }
 
     /**
-     * 解析客户端应答。
+     * 解析客户端应答，同时接受 v1（4 字段）与 v2（5 字段）。
+     *
+     * <p>判据是「字段数 + 版本号」必须自洽：v2 一定是 5 段，v1 一定是 4 段。
+     * 只按字段数放行的话，一个伪造的 5 段 v1 包就能混进来。
      *
      * @return 格式不合法（段数不对 / 版本不认识 / 关键字段为空）时返回 null，
      *         调用方只需记一条日志然后忽略这个包
@@ -139,10 +168,13 @@ public final class DeviceProtocol {
             return null;
         }
         String[] fields = payload.split("\\|", -1);
-        if (fields.length != 4) {
+        if (fields.length == 0) {
             return null;
         }
-        if (!VERSION.equals(fields[0])) {
+        String fingerprint = "";
+        if (fields.length == 5 && RESPONSE_VERSION.equals(fields[0])) {
+            fingerprint = normalizeFingerprint(fields[4]);
+        } else if (fields.length != 4 || !RESPONSE_VERSION_LEGACY.equals(fields[0])) {
             return null;
         }
         if (fields[1].isEmpty() || fields[2].isEmpty()) {
@@ -152,7 +184,13 @@ public final class DeviceProtocol {
         if (deviceName.length() > MAX_DEVICE_NAME) {
             deviceName = deviceName.substring(0, MAX_DEVICE_NAME);
         }
-        return new Response(fields[1], fields[2], sanitize(deviceName));
+        return new Response(fields[1], fields[2], sanitize(deviceName), fingerprint);
+    }
+
+    /** 设备指纹摘要：剔分隔符 + 限长，保证能塞进数据库列 */
+    public static String normalizeFingerprint(String value) {
+        String cleaned = sanitize(value == null ? "" : value.trim());
+        return cleaned.length() <= MAX_FINGERPRINT ? cleaned : cleaned.substring(0, MAX_FINGERPRINT);
     }
 
     // ==================================================================== 验签

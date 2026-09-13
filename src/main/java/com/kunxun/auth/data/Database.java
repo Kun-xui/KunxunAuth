@@ -181,6 +181,7 @@ public final class Database implements AutoCloseable {
                     """.formatted(backups, tablePrefix);
             // 公钥是设备的主键：一台设备只能属于一个账号，所以 public_key 上必须有唯一约束。
             // 靠应用层「先查再插」挡不住并发绑定，唯一索引才是真正兜得住的那一层。
+            // device_fingerprint 是客户端上报的硬件指纹摘要，给「换机器 / 密钥被复制」留证据。
             devicesDdl = """
                     CREATE TABLE IF NOT EXISTS %s (
                       id             BIGINT       NOT NULL AUTO_INCREMENT,
@@ -191,6 +192,7 @@ public final class Database implements AutoCloseable {
                       created_at     BIGINT       NOT NULL DEFAULT 0,
                       last_seen_at   BIGINT       NOT NULL DEFAULT 0,
                       last_ip        VARCHAR(45)  NOT NULL DEFAULT '',
+                      device_fingerprint VARCHAR(64) NOT NULL DEFAULT '',
                       PRIMARY KEY (id),
                       UNIQUE KEY uk_%sdevice_public_key (public_key),
                       KEY idx_%sdevice_username_lower (username_lower)
@@ -248,7 +250,8 @@ public final class Database implements AutoCloseable {
                       device_name    TEXT    NOT NULL DEFAULT '',
                       created_at     INTEGER NOT NULL DEFAULT 0,
                       last_seen_at   INTEGER NOT NULL DEFAULT 0,
-                      last_ip        TEXT    NOT NULL DEFAULT ''
+                      last_ip        TEXT    NOT NULL DEFAULT '',
+                      device_fingerprint TEXT NOT NULL DEFAULT ''
                     )
                     """.formatted(devices);
         }
@@ -277,6 +280,61 @@ public final class Database implements AutoCloseable {
         } else {
             logger.info("[KunxunAuth] max-accounts-per-email != 1，未启用 email_lower 唯一索引"
                     + "（一个邮箱可否绑多个账号只由应用层判断）");
+        }
+
+        ensureDeviceFingerprintColumn(devices);
+    }
+
+    /**
+     * 给老库的 devices 表补上 {@code device_fingerprint} 列。
+     *
+     * <p>{@code CREATE TABLE IF NOT EXISTS} 对已存在的表什么都不做，所以从 1.0.0
+     * 升级上来的服务器不会自动多出这一列，必须显式 {@code ALTER TABLE}。
+     * 缺列时读写设备表会直接抛 {@code no such column}，那是「登录都进不去」级别的故障，
+     * 所以这一步失败也要把话说清楚。
+     *
+     * <p>两种情况都算成功：加上了，或者本来就有（重复执行、并发启动）。
+     */
+    private void ensureDeviceFingerprintColumn(String devices) {
+        if (hasColumn(devices, "device_fingerprint")) {
+            return;
+        }
+        String ddl = "ALTER TABLE " + devices + " ADD COLUMN device_fingerprint "
+                + (isMysql() ? "VARCHAR(64) NOT NULL DEFAULT ''" : "TEXT NOT NULL DEFAULT ''");
+        try {
+            query(connection -> {
+                try (Statement statement = connection.createStatement()) {
+                    statement.executeUpdate(ddl);
+                }
+                return null;
+            });
+            logger.info("[KunxunAuth] devices 表已补充 device_fingerprint 列（设备指纹）");
+        } catch (SQLException e) {
+            if (hasColumn(devices, "device_fingerprint")) {
+                return;
+            }
+            logger.warning("[KunxunAuth] 补充 device_fingerprint 列失败：" + e.getMessage()
+                    + " —— 设备免密会因此不可用，请手动执行：" + ddl);
+        }
+    }
+
+    /** 表里是否已经有这一列（大小写不敏感，SQLite / MySQL 都能用） */
+    private boolean hasColumn(String table, String column) {
+        try {
+            return query(connection -> {
+                try (ResultSet rs = connection.getMetaData().getColumns(
+                        connection.getCatalog(), null, table, null)) {
+                    while (rs.next()) {
+                        String name = rs.getString("COLUMN_NAME");
+                        if (name != null && name.equalsIgnoreCase(column)) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            });
+        } catch (SQLException e) {
+            return false;
         }
     }
 

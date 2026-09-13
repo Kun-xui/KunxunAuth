@@ -62,7 +62,7 @@ tasks.withType(JavaCompile).configureEach {
     options.release = 25
 }
 
-// 交付要求固定产物名：KunxunAuth-Device-1.0.0-forge.jar
+// 交付要求固定产物名：KunxunAuth-Device-1.1.0-forge.jar
 jar {
     archiveFileName = "KunxunAuth-Device-${mod_version}-forge.jar"
 }

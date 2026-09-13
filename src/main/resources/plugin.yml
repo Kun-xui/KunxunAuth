@@ -1,5 +1,5 @@
 name: KunxunAuth
-version: 1.0.0
+version: 1.1.0
 main: com.kunxun.auth.KunxunAuthPlugin
 api-version: '26.2'
 authors: [kunxun]
@@ -35,7 +35,7 @@ commands:
     aliases: [kadevice, kadev]
   kunxunauth:
     description: KunxunAuth 管理命令
-    usage: /kunxunauth <help|reload|stats|info|unregister|restore|setpassword|unlock|devices|revokeall>
+    usage: /kunxunauth <help|setup|reload|stats|info|unregister|restore|setpassword|unlock|devices|revokeall>
     aliases: [kauth, ka]
 permissions:
   kunxunauth.admin:

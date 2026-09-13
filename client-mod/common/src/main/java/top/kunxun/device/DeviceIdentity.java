@@ -16,16 +16,21 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * 这台设备的身份：一对 Ed25519 密钥 + 一个给人看的名字。
+ * 这台设备上、这个账号的设备身份：一对 Ed25519 密钥 + 一个给人看的名字 + 本机指纹。
  *
  * <p>整个模组只做一件事——拿本地私钥对服务器给的随机挑战签名。
  * 服务端用对应的公钥验签，验过就认为「这就是上次绑定过的那台机器」，可以直接放行。
  *
  * <p>用 Ed25519 而不是 RSA/ECDSA 的原因：签名固定 64 字节、没有随机数陷阱
- * （ECDSA 重用 k 会直接泄露私钥）、并且从 Java 15 起由 JDK 内置
- * （{@code EdEC}），模组不需要引入任何加密库。
+ * （ECDSA 重用 k 会直接泄露私钥）、并且从 Java 15 起由 JDK 内置，
+ * 模组不需要引入任何加密库。
  *
- * <p>私钥永远不出本机；公钥才会上报给服务器。
+ * <p><b>密钥是按账号分开存的</b>（见 {@link DeviceKeyStore#fileFor}）：同一台电脑上
+ * 一个正版号加一个离线小号，各自有一把密钥、各自绑一次，互不打架。
+ * 1.0.0 是「一台机器一把、所有账号共用」，第二个账号因此永远绑不上设备。
+ *
+ * <p>私钥永远不出本机，而且落盘时用本机硬件指纹派生出的密钥加密过；
+ * 上报给服务器的只有公钥和指纹摘要。
  */
 public final class DeviceIdentity {
 
@@ -43,49 +48,78 @@ public final class DeviceIdentity {
     private final PrivateKey privateKey;
     private final PublicKey publicKey;
     private final String deviceName;
+    private final String fingerprint;
 
-    private DeviceIdentity(PrivateKey privateKey, PublicKey publicKey, String deviceName) {
+    private DeviceIdentity(PrivateKey privateKey, PublicKey publicKey, String deviceName, String fingerprint) {
         this.privateKey = privateKey;
         this.publicKey = publicKey;
         this.deviceName = deviceName;
+        this.fingerprint = fingerprint;
     }
 
     // ------------------------------------------------------------------ 加载
 
+    /** 用当前机器的指纹加载 / 生成这个账号的设备密钥 */
+    public static DeviceIdentity load(Path gameDirectory, String account) {
+        return load(gameDirectory, account, DeviceFingerprint.current());
+    }
+
     /**
-     * 读取已有设备密钥；文件不存在或已损坏时自动生成一份新的。
+     * 读取这个账号的设备密钥；文件不存在、读不出来或者解不开时自动生成一把新的。
      *
-     * <p>「损坏就重建」是有意为之：宁可让玩家重新绑定一次设备，
-     * 也不要因为一个读不出来的文件把游戏卡在登录界面。
+     * <p>「解不开就重建」是有意为之，而且是这套设计的核心：
+     *
+     * <ul>
+     *   <li>把密钥文件复制到另一台机器 → 新机器指纹不同 → 解不开 → 生成新密钥
+     *       → 服务端认不出这把公钥 → 玩家用密码登录一次并重新绑定。
+     *       这正是「密钥跟设备绑定」要的效果：复制文件拿不到任何东西。</li>
+     *   <li>换主板 / 换系统盘 / 重装系统导致指纹变化 → 同上，重新绑定一次即可。</li>
+     * </ul>
+     *
+     * <p>反过来，无论哪种情况都<b>不会</b>把玩家挡在门外：设备免密只是加速通道，
+     * 拿不到私钥就退回密码登录。
      */
-    public static DeviceIdentity load(Path keyFile) {
+    public static DeviceIdentity load(Path gameDirectory, String account, DeviceFingerprint.Result fingerprint) {
+        // 1.0.0 的全机共用密钥先归档掉，避免和按账号分文件的新布局混在一起
+        DeviceKeyStore.archiveLegacyIfPresent(gameDirectory);
+
+        Path keyFile = DeviceKeyStore.fileFor(gameDirectory, account);
+        String machine = fingerprint == null ? "" : fingerprint.summary();
         if (DeviceKeyStore.exists(keyFile)) {
             try {
-                DeviceKeyStore.StoredKeys stored = DeviceKeyStore.read(keyFile);
+                DeviceKeyStore.StoredKeys stored = DeviceKeyStore.read(keyFile, account, machine);
                 PrivateKey priv = decodePrivateKey(stored.privateKeyBase64());
                 PublicKey pub = decodePublicKey(stored.publicKeyBase64());
                 if (matches(priv, pub)) {
-                    return new DeviceIdentity(priv, pub, stored.deviceName());
+                    if (!stored.encrypted()) {
+                        // 明文格式（1.0.0 的写法）：顺手改成加密格式，不留一份可复制的凭据在磁盘上
+                        LOGGER.info("[KunxunAuth] 检测到未加密的设备密钥，正在用本机硬件指纹重新加密");
+                        DeviceKeyStore.write(keyFile, account, stored.privateKeyBase64(),
+                                stored.publicKeyBase64(), stored.deviceName(), machine);
+                    }
+                    return new DeviceIdentity(priv, pub, stored.deviceName(), machine);
                 }
                 LOGGER.warning("[KunxunAuth] 设备密钥文件里的公私钥不配套，将重新生成");
             } catch (IOException | GeneralSecurityException e) {
-                LOGGER.log(Level.WARNING, "[KunxunAuth] 读取设备密钥失败，将重新生成", e);
+                LOGGER.warning("[KunxunAuth] 无法使用现有设备密钥（" + e.getMessage()
+                        + "），将为账号 " + account + " 重新生成一把；免密需要重新绑定一次");
             }
         }
-        return create(keyFile);
+        return create(keyFile, account, machine);
     }
 
-    private static DeviceIdentity create(Path keyFile) {
+    private static DeviceIdentity create(Path keyFile, String account, String machine) {
         try {
             KeyPairGenerator generator = KeyPairGenerator.getInstance(ALGORITHM);
             KeyPair pair = generator.generateKeyPair();
             String name = defaultDeviceName();
-            DeviceKeyStore.write(keyFile,
+            DeviceKeyStore.write(keyFile, account,
                     DeviceProtocol.base64(pair.getPrivate().getEncoded()),
                     DeviceProtocol.base64(pair.getPublic().getEncoded()),
-                    name);
-            LOGGER.info("[KunxunAuth] 已在本机生成新的设备密钥：" + keyFile.toAbsolutePath());
-            return new DeviceIdentity(pair.getPrivate(), pair.getPublic(), name);
+                    name, machine);
+            LOGGER.info("[KunxunAuth] 已为本机的账号 " + account + " 生成新的设备密钥："
+                    + keyFile.toAbsolutePath());
+            return new DeviceIdentity(pair.getPrivate(), pair.getPublic(), name, machine);
         } catch (GeneralSecurityException | IOException e) {
             throw new IllegalStateException("无法生成设备密钥", e);
         }
@@ -100,6 +134,11 @@ public final class DeviceIdentity {
 
     public String deviceName() {
         return deviceName;
+    }
+
+    /** 本机硬件指纹摘要，随应答一起上报（服务端据此判断「还是不是同一台机器」） */
+    public String fingerprint() {
+        return fingerprint;
     }
 
     /** 对挑战原文签名，返回 Base64url 编码的 64 字节签名 */

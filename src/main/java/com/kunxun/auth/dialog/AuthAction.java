@@ -35,6 +35,14 @@ public enum AuthAction {
     DEVICE_BIND("device-bind"),
     /** 登录/注册成功后的设备询问：这次先不绑 */
     DEVICE_SKIP("device-skip"),
+    /**
+     * 设备免密校验等待框上的唯一按钮。
+     *
+     * <p>它不对应任何判定，存在的意义是让那个框有一个可点的按钮（对话框的按钮列表
+     * 不能为空，否则客户端解析不过）。点它只会让客户端进入「等待服务器」状态，
+     * 而服务器紧接着就会发下一个框或放行。
+     */
+    DEVICE_WAIT("device-wait"),
     /** 放弃并断开连接 */
     CANCEL("cancel"),
     /** 返回上一步 */

@@ -61,7 +61,22 @@ import java.util.logging.Logger;
 public final class DeviceService {
 
     /** 验签通过、但还没落库的一次设备应答 */
-    public record Proof(String publicKey, String deviceName) {
+    public record Proof(String publicKey, String deviceName, String fingerprint) {
+
+        /** 这份应答有没有带硬件指纹（v2 模组才有；v1 老模组是空串） */
+        public boolean hasFingerprint() {
+            return fingerprint != null && !fingerprint.isEmpty();
+        }
+    }
+
+    /** 免密登录的判定结果 */
+    public enum Authorization {
+        /** 免密放行 */
+        ALLOWED,
+        /** 这把公钥没绑在这个账号名下（含「绑在别人账号下」） */
+        NOT_BOUND,
+        /** 绑在这个账号名下，但硬件指纹对不上：换了机器，或者私钥文件被复制走了 */
+        FINGERPRINT_MISMATCH
     }
 
     /** 绑定结果 */
@@ -216,7 +231,7 @@ public final class DeviceService {
             logger.warning("[KunxunAuth] 设备应答验签失败：玩家 " + challenge.playerName());
             return null;
         }
-        return new Proof(response.publicKey(), response.deviceName());
+        return new Proof(response.publicKey(), response.deviceName(), response.fingerprint());
     }
 
     /** 入站应答。channel 只用来记日志，解析方式是两种包体都试 */
@@ -237,6 +252,19 @@ public final class DeviceService {
     /** 连接断开：销毁它名下的 nonce */
     public void onDisconnect(PlayerConnection connection) {
         challenges.discard(connection);
+    }
+
+    /**
+     * 主动放弃这条连接上的设备挑战。
+     *
+     * <p>和 {@link #onDisconnect} 是同一件事，只是调用语义不同：在
+     * 「玩家点了取消 / 验证失败要被断开」这类马上就要关连接的路径上，
+     * 必须<b>先</b>调用它再断开 —— 否则补发任务会在连接关闭的同时
+     * 从另一个线程往这条连接上写包，发包和断连撞在一起，
+     * 玩家看到的就是「点了退出还得等服务器」。
+     */
+    public void discard(PlayerConnection connection) {
+        onDisconnect(connection);
     }
 
     /** 兜底清理过期挑战 */
@@ -260,6 +288,81 @@ public final class DeviceService {
     public boolean isBoundTo(String username, String publicKey) {
         Optional<DeviceRecord> record = find(publicKey);
         return record.isPresent() && sameUser(record.get().username(), username);
+    }
+
+    /**
+     * 免密登录的完整判定：公钥归属 + 硬件指纹。
+     *
+     * <p>指纹的三档处理见 {@link AuthConfig.FingerprintMode}。这里只有一件事值得强调：
+     * <b>指纹永远不是放行的依据</b>，公钥验签才是。指纹只用来回答
+     * 「这台机器还是不是当初绑定那台」，回答「不是」时把这条绑定作废，
+     * 让玩家用密码登录一次、重新绑一次 —— 而不是把人挡在门外。
+     */
+    public Authorization authorize(String username, Proof proof) {
+        if (proof == null || username == null) {
+            return Authorization.NOT_BOUND;
+        }
+        Optional<DeviceRecord> found = find(proof.publicKey());
+        if (found.isEmpty() || !sameUser(found.get().username(), username)) {
+            return Authorization.NOT_BOUND;
+        }
+        return checkFingerprint(found.get(), proof);
+    }
+
+    private Authorization checkFingerprint(DeviceRecord record, Proof proof) {
+        AuthConfig.FingerprintMode mode = config.device().fingerprintMode();
+        if (mode == AuthConfig.FingerprintMode.OFF || !proof.hasFingerprint()) {
+            // 关了校验，或者对面是没带指纹的老模组：按公钥放行
+            return Authorization.ALLOWED;
+        }
+        if (!record.hasFingerprint()) {
+            // 这条绑定是老模组建的，指纹栏还空着：这一次补记上去，之后就能校验
+            fillFingerprint(record, proof.fingerprint());
+            return Authorization.ALLOWED;
+        }
+        if (record.sameMachine(proof.fingerprint())) {
+            return Authorization.ALLOWED;
+        }
+        if (mode == AuthConfig.FingerprintMode.RECORD) {
+            logger.warning("[KunxunAuth] 设备指纹与绑定记录不一致（" + record.username()
+                    + " / " + record.displayName() + "），fingerprint-mode=record，本次仍然放行");
+            return Authorization.ALLOWED;
+        }
+        // STRICT：这台机器已经不是当初绑定那台了
+        logger.warning("[KunxunAuth] 设备指纹不匹配，免密已作废：" + record.username()
+                + " / " + record.displayName() + " · 绑定=" + record.fingerprintPrefix()
+                + " · 本次=" + DeviceProtocol.normalizeFingerprint(proof.fingerprint()));
+        revokeStale(record);
+        return Authorization.FINGERPRINT_MISMATCH;
+    }
+
+    private void fillFingerprint(DeviceRecord record, String fingerprint) {
+        try {
+            if (devices.fillFingerprintIfMissing(record.publicKey(), fingerprint)) {
+                logger.info("[KunxunAuth] 已为设备「" + record.displayName()
+                        + "」补记硬件指纹（账号 " + record.username() + "）");
+            }
+        } catch (SQLException e) {
+            logger.log(Level.WARNING, "[KunxunAuth] 补记设备指纹失败", e);
+        }
+    }
+
+    /**
+     * 把「机器已经不是原来那台」的绑定删掉。
+     *
+     * <p>必须删而不是留着：留着的话公钥仍然被这条记录占着，玩家用密码登录之后
+     * 想重新绑定这台设备，会在 {@code bind} 里撞上 {@link BindResult#ALREADY_BOUND}，
+     * 于是永远卡在「每次都要输密码」上 —— 这正是要修的那个现象。
+     */
+    private void revokeStale(DeviceRecord record) {
+        try {
+            if (devices.deleteByPublicKey(record.publicKey())) {
+                logger.info("[KunxunAuth] 已作废账号 " + record.username()
+                        + " 上一台机器的设备绑定，玩家下次密码登录后可重新绑定");
+            }
+        } catch (SQLException e) {
+            logger.log(Level.WARNING, "[KunxunAuth] 作废陈旧设备绑定时出错", e);
+        }
     }
 
     /** 这个账号名下有没有绑过设备（用来决定值不值得为免密多等那几秒） */
@@ -291,17 +394,29 @@ public final class DeviceService {
      * <p>「同一把公钥被两个账号抢绑」这件事由数据库的唯一约束兜底，这里的预查询
      * 只负责把结果翻译成玩家能看懂的一句话。公钥本身就是设备身份，所以不存在
      * 「改个名字蒙过去」的空间。
+     *
+     * <p>从 1.1.0 起客户端是按账号分开存密钥的，所以「同一台机器上的两个账号」
+     * 会各自持有一把公钥，互不冲突；真走到 {@link BindResult#CONFLICT}，
+     * 只剩两种情况：客户端还是旧版（一机一把共用密钥），或者密钥文件被人复制过去了。
      */
-    public BindResult bind(String username, String publicKey, String deviceName, String ip) {
+    public BindResult bind(String username, String publicKey, String deviceName, String fingerprint, String ip) {
         Optional<DeviceRecord> existing = find(publicKey);
         if (existing.isPresent()) {
-            return sameUser(existing.get().username(), username) ? BindResult.ALREADY_BOUND : BindResult.CONFLICT;
+            if (sameUser(existing.get().username(), username)) {
+                return BindResult.ALREADY_BOUND;
+            }
+            logger.warning("[KunxunAuth] 设备「" + deviceName + "」的公钥已绑在账号 "
+                    + existing.get().username() + " 名下，拒绝绑定到 " + username
+                    + "（若是同一台机器的第二个账号，请把客户端模组升级到 1.1.0+，"
+                    + "旧版模组全机共用一把密钥）");
+            return BindResult.CONFLICT;
         }
         try {
             if (devices.countByUsername(username) >= config.device().maxDevicesPerAccount()) {
                 return BindResult.LIMIT_REACHED;
             }
-            return devices.bind(username, publicKey, deviceName, ip) ? BindResult.OK : BindResult.CONFLICT;
+            return devices.bind(username, publicKey, deviceName, fingerprint, ip)
+                    ? BindResult.OK : BindResult.CONFLICT;
         } catch (SQLException e) {
             logger.log(Level.WARNING, "[KunxunAuth] 绑定设备失败", e);
             return BindResult.FAILED;
