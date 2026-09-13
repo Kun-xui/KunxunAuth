@@ -4,9 +4,10 @@ import net.minecraft.client.Minecraft;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
-import net.neoforged.neoforge.client.network.ClientPacketDistributor;
 import net.neoforged.neoforge.client.network.event.RegisterClientPayloadHandlersEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
+import net.neoforged.neoforge.network.registration.ChannelAttributes;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import top.kunxun.device.DeviceIdentity;
 import top.kunxun.device.DeviceProtocol;
@@ -14,8 +15,8 @@ import top.kunxun.device.DeviceProtocol;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * NeoForge 客户端入口。
@@ -35,7 +36,7 @@ public final class KunxunAuthDeviceNeoForge {
 
     public static final String MOD_ID = "kunxunauth_device";
 
-    private static final Logger LOGGER = Logger.getLogger("KunxunAuth-Device");
+    private static final Logger LOGGER = LoggerFactory.getLogger("KunxunAuth-Device");
 
     /**
      * 网络注册的版本串。它只用于 NeoForge 内部比对双方注册表是否一致，
@@ -60,7 +61,13 @@ public final class KunxunAuthDeviceNeoForge {
 
     /** 双端都要跑的注册：声明两个包的 id 与编解码器 */
     private void onRegisterPayloads(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(NETWORK_VERSION);
+        // optional() 是能连上 Paper / 原版服务器的前提：
+        // NeoForge 的握手默认把所有注册过的 payload 当作「服务端也必须是 NeoForge」的证据，
+        // 只要有一个非 optional 的 payload，连 vanilla/Paper 服务器就会在握手阶段被
+        // 客户端自己拒绝（报「您有模组需要在服务端运行 NeoForge」）。
+        // 本模组的全部意义是「免密加速」，绝不能反过来挡人进服 —— 与 Forge 端
+        // ChannelBuilder.optional() 同一用意。
+        PayloadRegistrar registrar = event.registrar(NETWORK_VERSION).optional();
 
         // 配置阶段：收挑战。第三个参数是「客户端收到后干什么」，
         // 这里不直接写业务逻辑，而是转交给客户端专用事件注册，
@@ -84,15 +91,16 @@ public final class KunxunAuthDeviceNeoForge {
             // 都应该退化成「这台设备没提供凭据」，让玩家走密码登录，
             // 而不是变成一次断连。
             try {
-                handleChallenge(payload);
+                handleChallenge(payload, context);
             } catch (Throwable t) {
-                LOGGER.log(Level.WARNING, "[KunxunAuth] 设备挑战处理失败，已忽略该包（不影响正常登录）", t);
+                LOGGER.warn("[KunxunAuth-Device] 设备挑战处理失败，已忽略该包（不影响正常登录）", t);
             }
         });
     }
 
-    private static void handleChallenge(DeviceChallengePayload payload) {
+    private static void handleChallenge(DeviceChallengePayload payload, IPayloadContext context) {
         DeviceProtocol.Challenge challenge = DeviceProtocol.parseChallenge(payload.text());
+        LOGGER.info("[KunxunAuth-Device] 收到服务端挑战（kunxunauth:challenge）· player={}", challenge.playerName());
         // 用挑战里的玩家名定位密钥：服务端认的是这条连接上的玩家名，
         // 客户端也按它取密钥，两边的「账号」才是同一个
         DeviceIdentity device = identity(challenge.playerName());
@@ -102,8 +110,22 @@ public final class KunxunAuthDeviceNeoForge {
                 device.deviceName(),
                 device.fingerprint());
 
-        ClientPacketDistributor.sendToServer(new DeviceResponsePayload(response));
-        LOGGER.fine("[KunxunAuth] 已向服务器发送设备应答");
+        // 配置阶段必须用 context.reply() 沿原连接回发：
+        // ClientPacketDistributor.sendToServer 依赖 play 阶段的 ClientPacketListener，
+        // 在配置阶段它是 null，直接 NPE —— 这是 NeoForge 与 Forge 的关键差异。
+        //
+        // reply 之前还要把应答通道登记进连接的 adHocChannels：
+        // NeoForge 对每一条发送做 hasChannel 检查（NetworkRegistry.checkPacket），
+        // 通道名单本该来自服务器的 minecraft:register 声明 —— 但 Paper 在配置阶段
+        // 不发 register，modded 通道全部不在名单里，reply 会被
+        // 「Payload ... may not be sent to the server!」拦截。
+        // adHocChannels 是 NeoForge 的公开扩展点（ChannelAttributes），手动登记后放行。
+        var connection = context.connection();
+        if (connection != null) {
+            ChannelAttributes.getOrCreateAdHocChannels(connection).add(DeviceResponsePayload.TYPE.id());
+        }
+        context.reply(new DeviceResponsePayload(response));
+        LOGGER.info("[KunxunAuth-Device] 应答已发出（kunxunauth:response）");
     }
 
     /** 取（必要时生成）某个账号在这台机器上的设备身份；懒加载，只处理挑战时才会碰磁盘 */
